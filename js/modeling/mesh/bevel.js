@@ -241,7 +241,7 @@ function analyzeMesh(mesh, requestedEdges) {
 		faceData,
 		adjacency,
 		minimumEdgeLength,
-		maxWidth: minimumEdgeLength * 0.45,
+		maxWidth: minimumEdgeLength * 0.35,
 	};
 }
 function pointOnSegmentParameter(position, a, b) {
@@ -499,21 +499,12 @@ function makeCornerWorks(mesh, facePlans, edgeWorks, width) {
 				if (!plan.cornerCapPoints[vertexKey]) continue;
 				terminalFaceMarkerFound = true;
 				const polygon = plan.polygon;
-				const expanded = [];
-				let inserted = false;
-				for (let i = 0; i < polygon.length; i++) {
-					const current = polygon[i];
-					const next = polygon[(i + 1) % polygon.length];
-					expanded.push(current);
-					if (current.id === startPoint.id && next.id === endPoint.id) {
-						expanded.push(...profile.slice(1, -1));
-						inserted = true;
-					} else if (current.id === endPoint.id && next.id === startPoint.id) {
-						expanded.push(...profile.slice(1, -1).reverse());
-						inserted = true;
-					}
-				}
-				if (!inserted) continue;
+				const hasProfileEdge = polygon.some((point, index) => {
+					const next = polygon[(index + 1) % polygon.length];
+					return (point.id === startPoint.id && next.id === endPoint.id) ||
+						(point.id === endPoint.id && next.id === startPoint.id);
+				});
+				if (!hasProfileEdge) continue;
 
 				const planeOrigin = plan.info.positions[0];
 				const tolerance = Math.max(1e-4, width * 1e-3);
