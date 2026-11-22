@@ -1,5 +1,6 @@
 import { THREE } from '../lib/libs';
 import OrbitControls from './OrbitControls';
+import WalkNavigation from './walk_navigation';
 import StateMemory from "../util/state_memory";
 import { ConfigDialog } from '../interface/dialog';
 import { getFaceKeyFromIndex, isTouchEvent, toSnakeCase } from '../util/util';
@@ -236,6 +237,7 @@ export class Preview {
 	camPers: THREE.PerspectiveCamera
 	camOrtho: THREE.OrthographicCamera & {axis: string, backgroundHandle: any}
 	controls: any
+	walkNavigation: WalkNavigation
 	annotations: Record<string, PreviewAnnotation>
 	offscreen?: boolean
 	renderer: THREE.WebGLRenderer
@@ -352,6 +354,7 @@ export class Preview {
 
 		//Controls
 		this.controls = new OrbitControls(this.camPers, this);
+		this.walkNavigation = new WalkNavigation(this.controls);
 		this.controls.minDistance = 1;
 		this.controls.maxDistance = settings.maximum_zoom_distance.value as number;
 		this.controls.enableKeys = false;
@@ -1910,6 +1913,7 @@ export class Preview {
 		}
 	}
 	delete() {
+		this.walkNavigation.dispose();
 		this.renderer.dispose();
 		this.renderer.forceContextLoss()
 		this.canvas.remove();
@@ -2710,6 +2714,20 @@ BARS.defineActions(function() {
 		}
 	})
 	let uvEditorActive = () => (Prop.active_panel == 'uv' || document.querySelector('#UVEditor:hover'));
+	new Action('walk_navigation', {
+		name: 'First Person Navigation',
+		description: 'WASD move · mouse look · Space/Ctrl vertical · Shift faster · Esc exit',
+		icon: 'explore',
+		category: 'view',
+		keybind: new Keybind({key: 192, ctrl: true}),
+		condition: () => !!Preview.selected && !Preview.selected.offscreen,
+		click() {
+			let preview = Preview.selected;
+			if (!preview) return;
+			if (preview.isOrtho) preview.setProjectionMode(false, true);
+			preview.walkNavigation.toggle();
+		}
+	})
 	new Action('focus_on_selection', {
 		icon: 'center_focus_weak',
 		category: 'view',
@@ -2910,6 +2928,7 @@ declare global {
 		pixel_grid: Toggle
 		split_screen: BarSelect
 		focus_on_selection: Action
+		walk_navigation: Action
 		toggle_camera_projection: Action
 		camera_initial: Action
 		camera_top: Action
