@@ -5,6 +5,11 @@ import { Mesh } from '../../outliner/types/mesh';
 
 const EPSILON = 1e-6;
 const FACE_DIRECTIONS = ['north', 'east', 'south', 'west', 'up', 'down'];
+const DIRECTION_BY_AXIS = [
+	['west', 'east'],
+	['down', 'up'],
+	['north', 'south'],
+];
 
 function add(a, b) {
 	return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -33,17 +38,8 @@ function normalize(a) {
 	return len > EPSILON ? multiply(a, 1 / len) : [0, 0, 0];
 }
 function average(points) {
-	const sum = points.reduce((result, point) => add(result, point), [0, 0, 0]);
-	return multiply(sum, 1 / Math.max(1, points.length));
-}
-function distance(a, b) {
-	return length(subtract(a, b));
-}
-function edgeId(a, b) {
-	return a < b ? a + '_' + b : b + '_' + a;
-}
-function sameNumber(a, b, epsilon) {
-	return Math.abs(a - b) <= epsilon;
+	if (!points.length) return [0, 0, 0];
+	return multiply(points.reduce((sum, point) => add(sum, point), [0, 0, 0]), 1 / points.length);
 }
 function textureId(face) {
 	const texture = face.getTexture();
@@ -62,361 +58,280 @@ function createParentSpaceTransform(mesh) {
 		return point.toArray();
 	};
 }
-function getUvCorners(keys, uv) {
-	const values = keys.map(key => uv[key]);
-	if (values.some(value => !value || !Number.isFinite(value[0]) || !Number.isFinite(value[1]))) return null;
-	const minU = Math.min(...values.map(value => value[0]));
-	const maxU = Math.max(...values.map(value => value[0]));
-	const minV = Math.min(...values.map(value => value[1]));
-	const maxV = Math.max(...values.map(value => value[1]));
-	if (maxU - minU < EPSILON || maxV - minV < EPSILON) return null;
-	const epsilon = Math.max(1e-4, Math.max(maxU - minU, maxV - minV) * 1e-5);
-	const indices = {};
-	for (let i = 0; i < values.length; i++) {
-		const u = values[i][0];
-		const v = values[i][1];
-		let corner;
-		if (sameNumber(u, minU, epsilon) && sameNumber(v, minV, epsilon)) corner = 'uv00';
-		else if (sameNumber(u, maxU, epsilon) && sameNumber(v, minV, epsilon)) corner = 'uv10';
-		else if (sameNumber(u, maxU, epsilon) && sameNumber(v, maxV, epsilon)) corner = 'uv11';
-		else if (sameNumber(u, minU, epsilon) && sameNumber(v, maxV, epsilon)) corner = 'uv01';
-		else return null;
-		if (indices[corner] !== undefined) return null;
-		indices[corner] = i;
-	}
-	if (Object.keys(indices).length !== 4) return null;
-	return {indices, minU, maxU, minV, maxV};
-}
-function describeQuad(mesh, faceKey, face, transform, tolerance) {
-	if (face.vertices.length !== 4) return null;
-	const keys = face.getSortedVertices();
-	if (keys.length !== 4 || new Set(keys).size !== 4) return null;
-	const uvCorners = getUvCorners(keys, face.uv);
-	if (!uvCorners) return null;
+function getFaceGeometry(mesh, face, transform) {
+	if (!face || face.vertices.length < 3) return null;
+	const keys = face.vertices.length === 4 ? face.getSortedVertices() : face.vertices.slice();
+	if (keys.length < 3 || keys.some(key => !mesh.vertices[key])) return null;
 	const positions = keys.map(key => transform(mesh.vertices[key]));
-	if (positions.some(position => !position.every(Number.isFinite))) return null;
+	if (positions.some(point => !point.every(Number.isFinite))) return null;
 
-	const p00 = positions[uvCorners.indices.uv00];
-	const p10 = positions[uvCorners.indices.uv10];
-	const p11 = positions[uvCorners.indices.uv11];
-	const p01 = positions[uvCorners.indices.uv01];
-
-	const edgeU0 = subtract(p10, p00);
-	const edgeU1 = subtract(p11, p01);
-	const edgeV0 = subtract(p01, p00);
-	const edgeV1 = subtract(p11, p10);
-	const axisU = normalize(add(normalize(edgeU0), normalize(edgeU1)));
-	let axisV = normalize(add(normalize(edgeV0), normalize(edgeV1)));
-	axisV = normalize(subtract(axisV, multiply(axisU, dot(axisV, axisU))));
-	if (length(axisU) < EPSILON || length(axisV) < EPSILON) return null;
-
-	const center = average(positions);
-	const projectedU = positions.map(position => dot(subtract(position, center), axisU));
-	const projectedV = positions.map(position => dot(subtract(position, center), axisV));
-	const minU = Math.min(...projectedU);
-	const maxU = Math.max(...projectedU);
-	const minV = Math.min(...projectedV);
-	const maxV = Math.max(...projectedV);
-	const width = maxU - minU;
-	const height = maxV - minV;
-	if (width < EPSILON || height < EPSILON) return null;
-
-	const idealByCorner = {
-		uv00: add(center, add(multiply(axisU, minU), multiply(axisV, minV))),
-		uv10: add(center, add(multiply(axisU, maxU), multiply(axisV, minV))),
-		uv11: add(center, add(multiply(axisU, maxU), multiply(axisV, maxV))),
-		uv01: add(center, add(multiply(axisU, minU), multiply(axisV, maxV))),
-	};
-	let rectError = 0;
-	for (const corner of Object.keys(uvCorners.indices)) {
-		const index = uvCorners.indices[corner];
-		rectError = Math.max(rectError, distance(positions[index], idealByCorner[corner]));
+	// Newell normal supports planar triangles and quads without assuming perfect rectangles.
+	const normalVector = [0, 0, 0];
+	for (let i = 0; i < positions.length; i++) {
+		const a = positions[i];
+		const b = positions[(i + 1) % positions.length];
+		normalVector[0] += (a[1] - b[1]) * (a[2] + b[2]);
+		normalVector[1] += (a[2] - b[2]) * (a[0] + b[0]);
+		normalVector[2] += (a[0] - b[0]) * (a[1] + b[1]);
 	}
-	const planeNormal = normalize(cross(axisU, axisV));
-	const planeError = Math.max(...positions.map(position =>
-		Math.abs(dot(subtract(position, p00), planeNormal))
-	));
-	const scale = Math.max(width, height);
-	const allowedError = Math.max(1e-5, scale * tolerance);
-	if (Math.max(rectError, planeError) > allowedError) return null;
-
-	const ordered = keys.map(key => positions[keys.indexOf(key)]);
-	const geometryNormal = normalize(cross(subtract(ordered[1], ordered[0]), subtract(ordered[2], ordered[0])));
-	if (length(geometryNormal) < EPSILON) return null;
-
+	const twiceArea = length(normalVector);
+	if (twiceArea < EPSILON) return null;
 	return {
-		faceKey,
 		face,
 		keys,
 		positions,
+		normal: normalize(normalVector),
+		area: twiceArea * 0.5,
 		texture: textureId(face),
-		axisU,
-		axisV,
-		planeNormal: geometryNormal,
-		planePoint: p00,
-		uv00Position: p00,
-		uvBounds: {
-			minU: uvCorners.minU,
-			maxU: uvCorners.maxU,
-			minV: uvCorners.minV,
-			maxV: uvCorners.maxV,
-		},
-		width,
-		height,
-		scale,
-		uvScaleU: (uvCorners.maxU - uvCorners.minU) / width,
-		uvScaleV: (uvCorners.maxV - uvCorners.minV) / height,
 	};
 }
-function compatibleCoplanarFaces(a, b, tolerance) {
-	if (a.texture !== b.texture) return false;
-	const angularTolerance = Math.max(0.5, Math.min(3, tolerance * 100));
-	const minimumDot = Math.cos(Math.degToRad(angularTolerance));
-	if (dot(a.planeNormal, b.planeNormal) < minimumDot) return false;
-	const allowedPlaneDistance = Math.max(a.scale, b.scale) * Math.max(1e-5, tolerance * 1.5);
-	for (const point of b.positions) {
-		if (Math.abs(dot(subtract(point, a.planePoint), a.planeNormal)) > allowedPlaneDistance) return false;
-	}
-	return true;
+function positionKey(point, tolerance) {
+	return point.map(value => Math.round(value / tolerance)).join(',');
 }
-function polygonArea2D(points) {
-	let area = 0;
-	for (let i = 0; i < points.length; i++) {
-		const a = points[i];
-		const b = points[(i + 1) % points.length];
-		area += a[0] * b[1] - b[0] * a[1];
-	}
-	return Math.abs(area) * 0.5;
-}
-function tryBuildRectangularRegion(faces, tolerance) {
-	if (!faces.length) return null;
-	const base = faces[0];
-	const axisU = base.axisU;
-	const axisV = base.axisV;
-	const origin = base.uv00Position;
-	const planeTolerance = base.scale * Math.max(1e-5, tolerance * 1.5);
-	let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
-	let totalArea = 0;
-
-	for (const face of faces) {
-		if (face.texture !== base.texture) return null;
-		if (dot(face.planeNormal, base.planeNormal) < Math.cos(Math.degToRad(3))) return null;
-		const expectedFaceNormal = normalize(cross(face.axisU, multiply(face.axisV, -1)));
-		if (dot(face.planeNormal, expectedFaceNormal) < Math.cos(Math.degToRad(3))) return null;
-		const projected = [];
-		for (let i = 0; i < face.positions.length; i++) {
-			const point = face.positions[i];
-			if (Math.abs(dot(subtract(point, origin), base.planeNormal)) > planeTolerance) return null;
-			const relative = subtract(point, origin);
-			const x = dot(relative, axisU);
-			const y = dot(relative, axisV);
-			projected.push([x, y]);
-			minU = Math.min(minU, x);
-			maxU = Math.max(maxU, x);
-			minV = Math.min(minV, y);
-			maxV = Math.max(maxV, y);
-
-			const expectedU = base.uvBounds.minU + x * base.uvScaleU;
-			const expectedV = base.uvBounds.minV + y * base.uvScaleV;
-			const actualUV = face.face.uv[face.keys[i]];
-			const uvTolerance = Math.max(0.08, Math.max(
-				base.uvBounds.maxU - base.uvBounds.minU,
-				base.uvBounds.maxV - base.uvBounds.minV
-			) * 0.001);
-			if (Math.abs(actualUV[0] - expectedU) > uvTolerance ||
-				Math.abs(actualUV[1] - expectedV) > uvTolerance) return null;
-		}
-		totalArea += polygonArea2D(projected);
-	}
-
-	const width = maxU - minU;
-	const height = maxV - minV;
-	const boundingArea = width * height;
-	if (width < EPSILON || height < EPSILON || boundingArea < EPSILON) return null;
-	const areaTolerance = Math.max(0.005, tolerance * 2.0);
-	if (Math.abs(totalArea - boundingArea) / boundingArea > areaTolerance) return null;
-
-	// Confirm that the component boundary forms the four sides of one rectangle.
-	const edgeCounts = new Map();
-	const edgePositions = new Map();
-	for (const face of faces) {
-		const keys = face.keys;
-		for (let i = 0; i < keys.length; i++) {
-			const aKey = keys[i];
-			const bKey = keys[(i + 1) % keys.length];
-			const id = edgeId(aKey, bKey);
-			edgeCounts.set(id, (edgeCounts.get(id) || 0) + 1);
-			if (!edgePositions.has(id)) {
-				const ai = face.keys.indexOf(aKey);
-				const bi = face.keys.indexOf(bKey);
-				edgePositions.set(id, [
-					face.positions[ai],
-					face.positions[bi],
-				]);
-			}
+function getConnectedFaceComponents(faceGeometryByKey) {
+	const allPoints = Array.from(faceGeometryByKey.values()).flatMap(geometry => geometry.positions);
+	const min = [Infinity, Infinity, Infinity];
+	const max = [-Infinity, -Infinity, -Infinity];
+	for (const point of allPoints) {
+		for (let axis = 0; axis < 3; axis++) {
+			min[axis] = Math.min(min[axis], point[axis]);
+			max[axis] = Math.max(max[axis], point[axis]);
 		}
 	}
-	const sideCoverage = {left: 0, right: 0, bottom: 0, top: 0};
-	const borderTolerance = Math.max(1e-5, base.scale * Math.max(0.001, tolerance * 2.5));
-	for (const [id, count] of edgeCounts) {
-		if (count !== 1) continue;
-		const pair = edgePositions.get(id);
-		const a = subtract(pair[0], origin);
-		const b = subtract(pair[1], origin);
-		const ax = dot(a, axisU), ay = dot(a, axisV);
-		const bx = dot(b, axisU), by = dot(b, axisV);
-		if (Math.abs(ax - minU) <= borderTolerance && Math.abs(bx - minU) <= borderTolerance) {
-			sideCoverage.left += Math.abs(by - ay);
-		} else if (Math.abs(ax - maxU) <= borderTolerance && Math.abs(bx - maxU) <= borderTolerance) {
-			sideCoverage.right += Math.abs(by - ay);
-		} else if (Math.abs(ay - minV) <= borderTolerance && Math.abs(by - minV) <= borderTolerance) {
-			sideCoverage.bottom += Math.abs(bx - ax);
-		} else if (Math.abs(ay - maxV) <= borderTolerance && Math.abs(by - maxV) <= borderTolerance) {
-			sideCoverage.top += Math.abs(bx - ax);
-		} else {
-			return null;
-		}
-	}
-	const coverageTolerance = Math.max(borderTolerance * 2, Math.max(width, height) * tolerance * 2.5);
-	if (Math.abs(sideCoverage.left - height) > coverageTolerance ||
-		Math.abs(sideCoverage.right - height) > coverageTolerance ||
-		Math.abs(sideCoverage.bottom - width) > coverageTolerance ||
-		Math.abs(sideCoverage.top - width) > coverageTolerance) return null;
-
-	const midpointU = (minU + maxU) * 0.5;
-	const midpointV = (minV + maxV) * 0.5;
-	const center = add(origin, add(multiply(axisU, midpointU), multiply(axisV, midpointV)));
-	const uvRect = [
-		base.uvBounds.minU + minU * base.uvScaleU,
-		base.uvBounds.minV + minV * base.uvScaleV,
-		base.uvBounds.minU + maxU * base.uvScaleU,
-		base.uvBounds.minV + maxV * base.uvScaleV,
-	];
-	return {
-		center,
-		width,
-		height,
-		axisU,
-		axisV,
-		normal: base.planeNormal,
-		texture: base.texture,
-		uvRect,
-		faceCount: faces.length,
-	};
-}
-function makeFaceComponents(descriptors, tolerance) {
+	const snapTolerance = Math.max(1e-5, length(subtract(max, min)) * 1e-6);
 	const edgeOwners = new Map();
-	for (const descriptor of descriptors) {
-		for (let i = 0; i < descriptor.keys.length; i++) {
-			const id = edgeId(descriptor.keys[i], descriptor.keys[(i + 1) % descriptor.keys.length]);
+	for (const [faceKey, geometry] of faceGeometryByKey) {
+		const positions = geometry.positions;
+		for (let i = 0; i < positions.length; i++) {
+			const a = positionKey(positions[i], snapTolerance);
+			const b = positionKey(positions[(i + 1) % positions.length], snapTolerance);
+			const id = a < b ? a + '_' + b : b + '_' + a;
 			if (!edgeOwners.has(id)) edgeOwners.set(id, []);
-			edgeOwners.get(id).push(descriptor);
+			edgeOwners.get(id).push(faceKey);
 		}
 	}
-	const neighbors = new Map(descriptors.map(descriptor => [descriptor.faceKey, new Set()]));
+	const neighbors = new Map(Array.from(faceGeometryByKey.keys(), key => [key, new Set()]));
 	for (const owners of edgeOwners.values()) {
-		if (owners.length !== 2) continue;
-		const [a, b] = owners;
-		if (compatibleCoplanarFaces(a, b, tolerance)) {
-			neighbors.get(a.faceKey).add(b);
-			neighbors.get(b.faceKey).add(a);
+		for (let i = 0; i < owners.length; i++) {
+			for (let j = i + 1; j < owners.length; j++) {
+				neighbors.get(owners[i]).add(owners[j]);
+				neighbors.get(owners[j]).add(owners[i]);
+			}
 		}
 	}
 	const components = [];
 	const visited = new Set();
-	for (const descriptor of descriptors) {
-		if (visited.has(descriptor.faceKey)) continue;
-		const queue = [descriptor];
+	for (const faceKey of faceGeometryByKey.keys()) {
+		if (visited.has(faceKey)) continue;
+		const queue = [faceKey];
 		const component = [];
-		visited.add(descriptor.faceKey);
+		visited.add(faceKey);
 		while (queue.length) {
 			const current = queue.pop();
-			component.push(current);
-			for (const neighbor of neighbors.get(current.faceKey)) {
-				if (visited.has(neighbor.faceKey)) continue;
-				visited.add(neighbor.faceKey);
+			component.push(faceGeometryByKey.get(current));
+			for (const neighbor of neighbors.get(current)) {
+				if (visited.has(neighbor)) continue;
+				visited.add(neighbor);
 				queue.push(neighbor);
 			}
 		}
-		components.push({faces: component, neighbors});
+		components.push(component);
 	}
 	return components;
 }
-function buildMinimalRegions(descriptors, mergeCoplanar, tolerance) {
-	const regions = [];
-	const components = mergeCoplanar
-		? makeFaceComponents(descriptors, tolerance)
-		: descriptors.map(face => ({faces: [face], neighbors: null}));
-	for (const component of components) {
-		const {faces, neighbors} = component;
-		const completeRegion = tryBuildRectangularRegion(faces, tolerance);
-		if (completeRegion) {
-			regions.push(completeRegion);
-			continue;
-		}
-		if (faces.length === 1 || !mergeCoplanar || faces.length > 256) {
-			for (const face of faces) {
-				const region = tryBuildRectangularRegion([face], tolerance);
-				if (region) regions.push(region);
+function clusterFaceNormals(faceGeometries) {
+	const clusters = [];
+	const parallelThreshold = Math.cos(Math.degToRad(15));
+	for (const geometry of faceGeometries) {
+		let cluster = null;
+		let bestDot = 0;
+		for (const candidate of clusters) {
+			const alignment = Math.abs(dot(candidate.normal, geometry.normal));
+			if (alignment > parallelThreshold && alignment > bestDot) {
+				cluster = candidate;
+				bestDot = alignment;
 			}
-			continue;
 		}
-		// Greedy rectangular partition: expand the largest available face
-		// through adjacent quads only while the combined surface remains a rectangle.
-		const remaining = new Set(faces);
-		while (remaining.size) {
-			const seed = Array.from(remaining).sort((a, b) => b.width * b.height - a.width * a.height)[0];
-			let current = [seed];
-			let currentRegion = tryBuildRectangularRegion(current, tolerance);
-			remaining.delete(seed);
-			while (true) {
-				const candidates = new Set();
-				for (const face of current) {
-					for (const neighbor of neighbors.get(face.faceKey)) {
-						if (remaining.has(neighbor)) candidates.add(neighbor);
-					}
-				}
-				const sortedCandidates = Array.from(candidates).sort((a, b) => b.width * b.height - a.width * a.height);
-				let accepted = false;
-				for (const candidate of sortedCandidates) {
-					const merged = tryBuildRectangularRegion(current.concat(candidate), tolerance);
-					if (merged) {
-						current.push(candidate);
-						currentRegion = merged;
-						remaining.delete(candidate);
-						accepted = true;
-						break;
-					}
-				}
-				if (!accepted) break;
-			}
-			if (currentRegion) regions.push(currentRegion);
+		if (!cluster) {
+			clusters.push({sum: multiply(geometry.normal, geometry.area), normal: geometry.normal.slice(), area: geometry.area});
+		} else {
+			const sign = dot(cluster.normal, geometry.normal) < 0 ? -1 : 1;
+			cluster.sum = add(cluster.sum, multiply(geometry.normal, geometry.area * sign));
+			cluster.normal = normalize(cluster.sum);
+			cluster.area += geometry.area;
 		}
 	}
-	return regions;
+	return clusters.sort((a, b) => b.area - a.area);
 }
-function makeCubeData(mesh, region, index) {
-	const basisX = region.axisU;
-	const basisY = multiply(region.axisV, -1);
-	const basisZ = normalize(cross(basisX, basisY));
-	if (dot(region.normal, basisZ) < Math.cos(Math.degToRad(3))) {
-		throw new Error('A orientação UV desta face não é compatível com uma face nativa do CPM.');
+function chooseBoxAxes(faceGeometries) {
+	const clusters = clusterFaceNormals(faceGeometries);
+	if (clusters.length < 3) return null;
+	let best = null;
+	const maxClusters = Math.min(clusters.length, 18);
+	for (let i = 0; i < maxClusters; i++) {
+		for (let j = i + 1; j < maxClusters; j++) {
+			for (let k = j + 1; k < maxClusters; k++) {
+				const d01 = Math.abs(dot(clusters[i].normal, clusters[j].normal));
+				const d02 = Math.abs(dot(clusters[i].normal, clusters[k].normal));
+				const d12 = Math.abs(dot(clusters[j].normal, clusters[k].normal));
+				const orthogonalityError = d01 + d02 + d12;
+				if (Math.max(d01, d02, d12) > 0.5) continue;
+				const score = clusters[i].area + clusters[j].area + clusters[k].area - orthogonalityError * (clusters[i].area + clusters[j].area + clusters[k].area) * 0.25;
+				if (!best || score > best.score) best = {i, j, k, score};
+			}
+		}
 	}
+	if (!best) return null;
+
+	const axisX = normalize(clusters[best.i].normal);
+	let axisY = subtract(clusters[best.j].normal, multiply(axisX, dot(clusters[best.j].normal, axisX)));
+	axisY = normalize(axisY);
+	let axisZ = normalize(cross(axisX, axisY));
+	if (length(axisZ) < EPSILON) return null;
+	if (dot(axisZ, clusters[best.k].normal) < 0) {
+		axisY = multiply(axisY, -1);
+		axisZ = multiply(axisZ, -1);
+	}
+	return [axisX, axisY, axisZ];
+}
+function fitSolidCuboid(component, tolerance) {
+	const axes = chooseBoxAxes(component);
+	if (!axes) return null;
+	const allPositions = component.flatMap(geometry => geometry.positions);
+	const minPoint = [Infinity, Infinity, Infinity];
+	const maxPoint = [-Infinity, -Infinity, -Infinity];
+	for (const point of allPositions) {
+		for (let axis = 0; axis < 3; axis++) {
+			minPoint[axis] = Math.min(minPoint[axis], point[axis]);
+			maxPoint[axis] = Math.max(maxPoint[axis], point[axis]);
+		}
+	}
+	const pointSnap = Math.max(1e-5, length(subtract(maxPoint, minPoint)) * 1e-6);
+	const pointMap = new Map();
+	for (const point of allPositions) pointMap.set(positionKey(point, pointSnap), point);
+	const points = Array.from(pointMap.values());
+	if (points.length < 8) return null;
+
+	const projected = points.map(point => axes.map(axis => dot(point, axis)));
+	const min = [Infinity, Infinity, Infinity];
+	const max = [-Infinity, -Infinity, -Infinity];
+	for (const coords of projected) {
+		for (let axis = 0; axis < 3; axis++) {
+			min[axis] = Math.min(min[axis], coords[axis]);
+			max[axis] = Math.max(max[axis], coords[axis]);
+		}
+	}
+	const size = max.map((value, axis) => value - min[axis]);
+	if (size.some(value => value < EPSILON)) return null;
+	const minimumSize = Math.min(...size);
+	const allowedDeviation = minimumSize * tolerance;
+
+	// A valid cuboid shell should keep most vertices close to one of its six planes.
+	let nearBoundary = 0;
+	for (const coords of projected) {
+		const nearestPlaneDistance = Math.min(
+			coords[0] - min[0], max[0] - coords[0],
+			coords[1] - min[1], max[1] - coords[1],
+			coords[2] - min[2], max[2] - coords[2]
+		);
+		if (nearestPlaneDistance <= allowedDeviation) nearBoundary++;
+	}
+	const boundaryRatio = nearBoundary / projected.length;
+
+	let totalArea = 0;
+	let alignedArea = 0;
+	for (const geometry of component) {
+		totalArea += geometry.area;
+		const alignment = Math.max(...axes.map(axis => Math.abs(dot(axis, geometry.normal))));
+		if (alignment >= Math.cos(Math.degToRad(30))) alignedArea += geometry.area;
+	}
+	const alignedAreaRatio = totalArea > EPSILON ? alignedArea / totalArea : 0;
+	if (boundaryRatio < 0.78 || alignedAreaRatio < 0.58) return null;
+
+	const mid = min.map((value, axis) => (value + max[axis]) * 0.5);
+	const center = add(
+		add(multiply(axes[0], mid[0]), multiply(axes[1], mid[1])),
+		multiply(axes[2], mid[2])
+	);
+	const halfSize = size.map(value => value * 0.5);
+
+	// Gather the best matching source texture/UV rectangle for each of the six box sides.
+	const sides = {};
+	for (const direction of FACE_DIRECTIONS) sides[direction] = {textures: new Map(), minU: Infinity, minV: Infinity, maxU: -Infinity, maxV: -Infinity, area: 0};
+	for (const geometry of component) {
+		const alignmentByAxis = axes.map(axis => dot(axis, geometry.normal));
+		let axisIndex = 0;
+		for (let i = 1; i < 3; i++) {
+			if (Math.abs(alignmentByAxis[i]) > Math.abs(alignmentByAxis[axisIndex])) axisIndex = i;
+		}
+		if (Math.abs(alignmentByAxis[axisIndex]) < Math.cos(Math.degToRad(30))) continue;
+		const sign = alignmentByAxis[axisIndex] >= 0 ? 1 : -1;
+		const direction = DIRECTION_BY_AXIS[axisIndex][sign > 0 ? 1 : 0];
+		const side = sides[direction];
+		const faceCenter = average(geometry.positions);
+		const facePlane = dot(faceCenter, axes[axisIndex]);
+		const targetPlane = sign > 0 ? max[axisIndex] : min[axisIndex];
+		if (Math.abs(facePlane - targetPlane) > Math.max(allowedDeviation * 1.5, size[axisIndex] * 0.03)) continue;
+		const faceUVs = geometry.keys.map(key => geometry.face.uv && geometry.face.uv[key]).filter(uv => uv && Number.isFinite(uv[0]) && Number.isFinite(uv[1]));
+		if (faceUVs.length >= 3) {
+			for (const uv of faceUVs) {
+				side.minU = Math.min(side.minU, uv[0]);
+				side.minV = Math.min(side.minV, uv[1]);
+				side.maxU = Math.max(side.maxU, uv[0]);
+				side.maxV = Math.max(side.maxV, uv[1]);
+			}
+		}
+		if (geometry.texture) side.textures.set(geometry.texture, (side.textures.get(geometry.texture) || 0) + geometry.area);
+		side.area += geometry.area;
+	}
+	for (const direction of FACE_DIRECTIONS) {
+		const side = sides[direction];
+		side.texture = Array.from(side.textures.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || false;
+		side.uv = [side.minU, side.minV, side.maxU, side.maxV].every(Number.isFinite) &&
+			side.maxU > side.minU && side.maxV > side.minV
+			? [side.minU, side.minV, side.maxU, side.maxV]
+			: null;
+	}
+
+	return {center, axes, halfSize, sides, boundaryRatio, alignedAreaRatio};
+}
+function prepareMesh(mesh, options) {
+	const transform = createParentSpaceTransform(mesh);
+	const faceGeometryByKey = new Map();
+	for (const faceKey in mesh.faces) {
+		const geometry = getFaceGeometry(mesh, mesh.faces[faceKey], transform);
+		if (geometry) faceGeometryByKey.set(faceKey, geometry);
+	}
+	const expectedFaceCount = Object.values(mesh.faces).filter(face => face.vertices.length >= 3).length;
+	if (!faceGeometryByKey.size || faceGeometryByKey.size !== expectedFaceCount) {
+		return {mesh, cuboids: [], rejected: 1, sourceFaces: expectedFaceCount};
+	}
+
+	const components = getConnectedFaceComponents(faceGeometryByKey);
+	const cuboids = [];
+	for (const component of components) {
+		const cuboid = fitSolidCuboid(component, options.tolerance);
+		if (!cuboid) {
+			// Never hide a source Mesh if even one connected shell could not be fitted.
+			return {mesh, cuboids: [], rejected: 1, sourceFaces: faceGeometryByKey.size};
+		}
+		cuboids.push(cuboid);
+	}
+	return {mesh, cuboids, rejected: 0, sourceFaces: faceGeometryByKey.size};
+}
+function makeCubeData(mesh, data, index) {
 	const matrix = new THREE.Matrix4().makeBasis(
-		new THREE.Vector3(...basisX),
-		new THREE.Vector3(...basisY),
-		new THREE.Vector3(...basisZ)
+		new THREE.Vector3(...data.axes[0]),
+		new THREE.Vector3(...data.axes[1]),
+		new THREE.Vector3(...data.axes[2])
 	);
 	const euler = new THREE.Euler().setFromRotationMatrix(matrix, Format.euler_order);
-	const center = region.center;
-	const halfWidth = region.width * 0.5;
-	const halfHeight = region.height * 0.5;
-	const from = [center[0] - halfWidth, center[1] - halfHeight, center[2]];
-	const to = [center[0] + halfWidth, center[1] + halfHeight, center[2]];
+	const center = data.center;
+	const half = data.halfSize;
 	const cube = new Cube({
 		name: mesh.name + '_CPM_' + index,
-		from,
-		to,
+		from: [center[0] - half[0], center[1] - half[1], center[2] - half[2]],
+		to: [center[0] + half[0], center[1] + half[1], center[2] + half[2]],
 		origin: center.slice(),
 		rotation: euler.toArray().slice(0, 3).map(Math.radToDeg),
 		inflate: 0,
@@ -431,62 +346,25 @@ function makeCubeData(mesh, region, index) {
 	cube.box_uv = false;
 	for (const direction of FACE_DIRECTIONS) {
 		const face = cube.faces[direction];
-		face.texture = null;
-		face.enabled = false;
-		face.uv = [0, 0, 0, 0];
+		const side = data.sides[direction];
+		face.enabled = true;
+		face.texture = side.texture || false;
+		if (side.uv) face.uv = side.uv.slice();
 		face.rotation = 0;
 	}
-	const activeFace = cube.faces.south;
-	activeFace.texture = region.texture || false;
-	activeFace.enabled = true;
-	activeFace.uv = region.uvRect.slice();
-	activeFace.rotation = 0;
 	return cube;
 }
-function prepareMesh(mesh, options) {
-	const transform = createParentSpaceTransform(mesh);
-	const descriptors = [];
-	let skipped = 0;
-	for (const faceKey in mesh.faces) {
-		const face = mesh.faces[faceKey];
-		if (face.vertices.length !== 4) {
-			if (face.vertices.length >= 3) skipped++;
-			continue;
-		}
-		const descriptor = describeQuad(mesh, faceKey, face, transform, options.tolerance);
-		if (descriptor) descriptors.push(descriptor);
-		else skipped++;
-	}
-	if (!descriptors.length) {
-		return {mesh, regions: [], skipped, sourceFaces: Object.values(mesh.faces).filter(face => face.vertices.length >= 3).length};
-	}
-	const regions = buildMinimalRegions(descriptors, options.mergeCoplanar, options.tolerance);
-	const convertedFaces = regions.reduce((sum, region) => sum + region.faceCount, 0);
-	skipped += Math.max(0, descriptors.length - convertedFaces);
-	return {
-		mesh,
-		regions,
-		skipped,
-		sourceFaces: Object.values(mesh.faces).filter(face => face.vertices.length >= 3).length,
-	};
-}
-function convertMeshes(prepared, keepBackup) {
+function convertMeshes(prepared, keepBackup, rejectedCount) {
 	const sourceMeshes = prepared.map(entry => entry.mesh);
-	const originalSelection = sourceMeshes.slice();
-	Undo.initEdit({
-		elements: sourceMeshes,
-		outliner: true,
-		selection: true,
-	});
-	let created = [];
+	Undo.initEdit({elements: sourceMeshes, outliner: true, selection: true});
+	const created = [];
 	try {
 		for (const entry of prepared) {
-			if (!entry.regions.length) continue;
 			const mesh = entry.mesh;
 			const originalName = mesh.name;
 			const newCubes = [];
-			entry.regions.forEach((region, index) => {
-				const cube = makeCubeData(mesh, region, index + 1);
+			entry.cuboids.forEach((cuboid, index) => {
+				const cube = makeCubeData(mesh, cuboid, index + 1);
 				cube.sortInBefore(mesh, 0).init();
 				newCubes.push(cube);
 			});
@@ -503,14 +381,10 @@ function convertMeshes(prepared, keepBackup) {
 		}
 		if (!created.length) {
 			Undo.cancelEdit(true);
-			Blockbench.showQuickMessage('Nenhuma face retangular compatível foi encontrada. A Mesh foi mantida.', 4000);
+			Blockbench.showQuickMessage('Nenhum componente pôde ser ajustado como cuboid sólido. A Mesh foi mantida.', 5000);
 			return;
 		}
-		Undo.finishEdit('Convert Mesh to CPM Cuboids', {
-			elements: created,
-			outliner: true,
-			selection: true,
-		});
+		Undo.finishEdit('Convert Mesh to Solid Cuboids', {elements: created, outliner: true, selection: true});
 		updateSelection();
 		if (created[0]) created[0].select();
 		Canvas.updateView({
@@ -518,69 +392,64 @@ function convertMeshes(prepared, keepBackup) {
 			element_aspects: {geometry: true, transform: true, faces: true, uv: true},
 			selection: true,
 		});
-		const skipped = prepared.reduce((sum, entry) => sum + entry.skipped, 0);
-		const sourceCount = prepared.reduce((sum, entry) => sum + entry.sourceFaces, 0);
+		const cubeCount = prepared.reduce((sum, entry) => sum + entry.cuboids.length, 0);
 		Blockbench.showQuickMessage(
-			'Conversão concluída: ' + created.length + ' Cuboids para ' +
-			(sourceCount - skipped) + ' quads; ' + skipped +
-			' faces incompatíveis. ' + (keepBackup ? 'Mesh original mantida oculta como backup.' : 'Mesh original substituída.'),
-			6000
+			'Conversão concluída: ' + cubeCount + ' Cuboids sólidos. ' +
+			rejectedCount + ' Mesh(es) não convertida(s) por não se ajustarem a volumes cúbicos. ' +
+			(keepBackup ? 'Originais mantidos ocultos como backup.' : 'Originais substituídos.'),
+			7000
 		);
 	} catch (error) {
 		Undo.cancelEdit(true);
 		updateSelection();
-		Canvas.updateView({elements: originalSelection, element_aspects: {geometry: true, transform: true, faces: true, uv: true}, selection: true});
+		Canvas.updateView({elements: sourceMeshes, element_aspects: {geometry: true, transform: true, faces: true, uv: true}, selection: true});
 		Blockbench.showQuickMessage(error?.message || 'Falha ao converter Mesh para Cuboids.', 5000);
 	}
 }
 
 new Action('mesh_to_cuboids', {
-	name: 'Convert Mesh to CPM Cuboids',
-	description: 'Convert rectangular quad surfaces into native Cube elements, merging coplanar faces to reduce parts.',
+	name: 'Convert Mesh to Solid Cuboids',
+	description: 'Fit one volumetric Cuboid to each connected Mesh shell, allowing small bevels and imperfect quads.',
 	icon: 'fa-cubes',
 	category: 'edit',
 	condition: () => Modes.edit && Mesh.selected.length > 0,
 	click() {
 		const dialog = new Dialog('mesh_to_cuboids', {
-			title: 'Convert Mesh to CPM Cuboids',
+			title: 'Convert Mesh to Solid Cuboids',
 			form: {
 				tolerance: {
-					label: 'Quad fitting tolerance (%)',
+					label: 'Permitir desvio/bevel (%)',
 					type: 'number',
-					value: 2,
-					min: 0,
-					max: 10,
-					step: 0.1,
-				},
-				merge_coplanar: {
-					label: 'Merge adjacent coplanar quads into fewer Cuboids',
-					type: 'checkbox',
-					value: true,
+					value: 15,
+					min: 1,
+					max: 40,
+					step: 1,
 				},
 				keep_backup: {
-					label: 'Keep original Mesh hidden as a backup',
+					label: 'Manter Mesh original oculta como backup',
 					type: 'checkbox',
 					value: true,
 				},
 			},
 			onConfirm(result) {
 				const options = {
-					tolerance: Math.max(0, Math.min(10, Number(result.tolerance) || 0)) / 100,
-					mergeCoplanar: result.merge_coplanar !== false,
+					tolerance: Math.max(1, Math.min(40, Number(result.tolerance) || 15)) / 100,
 				};
 				const meshes = Mesh.selected.slice();
 				let prepared;
 				try {
-					prepared = meshes.map(mesh => prepareMesh(mesh, options)).filter(entry => entry.regions.length);
+					prepared = meshes.map(mesh => prepareMesh(mesh, options));
 				} catch (error) {
 					Blockbench.showQuickMessage(error?.message || 'Não foi possível analisar a Mesh.', 5000);
 					return;
 				}
-				if (!prepared.length) {
-					Blockbench.showQuickMessage('Nenhuma face retangular compatível foi encontrada. Use quads planos com UVs retangulares.', 5000);
+				const valid = prepared.filter(entry => entry.cuboids.length > 0);
+				const rejected = prepared.length - valid.length;
+				if (!valid.length) {
+					Blockbench.showQuickMessage('Nenhuma Mesh parece formar um volume cúbico. Nada foi alterado.', 6000);
 					return;
 				}
-				convertMeshes(prepared, result.keep_backup !== false);
+				convertMeshes(valid, result.keep_backup !== false, rejected);
 			},
 		});
 		dialog.show();
