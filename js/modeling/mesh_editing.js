@@ -269,7 +269,7 @@ SharedActions.add('invert_selection', {
 					const selected = components.vertices.slice();
 					components.vertices.replace(Array.from({length: 8}, (_, i) => String(i)).filter(key => !selected.includes(key)));
 					components.edges.empty();
-					UVEditor.getSelectedFaces(cube, true).empty();
+					components.faces.empty();
 				} else if (selection_mode == 'edge') {
 					const old_edges = components.edges.slice();
 					const edges = CUBE_EDGE_INDICES.filter(edge => !old_edges.find(edge2 => sameCubeEdge(edge2, edge)));
@@ -443,7 +443,14 @@ BARS.defineActions(function() {
 				if (value === 'face') {
 					if (['edge', 'vertex'].includes(previous_selection_mode)) {
 						const selected_faces = Object.keys(cube.faces).filter(fkey => {
-							return cube.faces[fkey].getVertexIndices().every(index => vertices.includes(String(index)));
+							const indices = cube.faces[fkey].getVertexIndices().map(String);
+							if (previous_selection_mode === 'edge') {
+								return indices.every((key, i) => {
+									const edge = [key, indices[i+1] ?? indices[0]];
+									return edges.some(selected_edge => sameCubeEdge(selected_edge, edge));
+								});
+							}
+							return indices.every(key => vertices.includes(key));
 						});
 						faces.replace(selected_faces);
 					}
