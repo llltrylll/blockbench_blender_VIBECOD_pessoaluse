@@ -367,6 +367,10 @@ function startFaceExtrude(event, cube, face_key, preview) {
 }
 
 function startEdgeExtrude(event, cube, edge, preview) {
+	if (!Format.meshes) {
+		Blockbench.showQuickMessage('This format does not support mesh faces, so Cube Edge Extrude is unavailable here.');
+		return;
+	}
 	cube.mesh.updateWorldMatrix(true, false);
 	const world_vertices = cube.getGlobalVertexPositions().map(coords => new THREE.Vector3(...coords).add(scene.position));
 	const candidates = edgeCandidates(cube, edge, world_vertices, preview);
