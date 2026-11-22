@@ -1,4 +1,5 @@
 export class UndoSystem {
+import { getCubeComponentSelection, setCubeComponentSelection } from './modeling/cube_selection_data';
 	constructor() {
 		this.index = 0;
 		this.history = [];
@@ -877,10 +878,11 @@ UndoSystem.selectionSave = class {
 					vertices: element.getSelectedVertices().slice(),
 				}
 			} else if (element instanceof Cube) {
+				const components = getCubeComponentSelection(element);
 				this.geometry[element.uuid] = {
-					faces: element.getSelectedFaces().slice(),
-					edges: element.getSelectedEdges().map(edge => edge.slice()),
-					vertices: element.getSelectedVertices().slice(),
+					faces: UVEditor.getSelectedFaces(element).slice(),
+					edges: components.edges.map(edge => edge.slice()),
+					vertices: components.vertices.slice(),
 				}
 			} else if (element instanceof SplineMesh) {
 				this.geometry[element.uuid] = {
@@ -956,9 +958,11 @@ UndoSystem.selectionSave = class {
 					element.getSelectedVertices(true).replace(geo_data.vertices);
 
 				} else if (element instanceof Cube) {
-					element.getSelectedFaces(true).replace(geo_data.faces || []);
-					element.getSelectedEdges(true).replace((geo_data.edges || []).map(edge => edge.slice()));
-					element.getSelectedVertices(true).replace(geo_data.vertices || []);
+					UVEditor.getSelectedFaces(element, true).replace(geo_data.faces || []);
+					setCubeComponentSelection(element, {
+						edges: geo_data.edges || [],
+						vertices: geo_data.vertices || [],
+					});
 
 				} else if (element instanceof SplineMesh) {
 					element.getSelectedVertices(true).replace(geo_data.vertices);
