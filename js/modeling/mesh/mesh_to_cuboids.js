@@ -248,6 +248,37 @@ function fitSolidCuboid(component, tolerance) {
 	const alignedAreaRatio = totalArea > EPSILON ? alignedArea / totalArea : 0;
 	if (boundaryRatio < 0.78 || alignedAreaRatio < 0.58) return null;
 
+	// Verify that all six sides have enough surface coverage. This prevents an L-shaped
+	// or hollow shell from being collapsed into one oversized box just because its
+	// vertices happen to touch the bounding planes.
+	const sideCoverage = [[0, 0], [0, 0], [0, 0]];
+	for (const geometry of component) {
+		const alignmentByAxis = axes.map(axis => dot(axis, geometry.normal));
+		let axisIndex = 0;
+		for (let i = 1; i < 3; i++) {
+			if (Math.abs(alignmentByAxis[i]) > Math.abs(alignmentByAxis[axisIndex])) axisIndex = i;
+		}
+		if (Math.abs(alignmentByAxis[axisIndex]) < Math.cos(Math.degToRad(30))) continue;
+		const faceCenter = average(geometry.positions);
+		const facePlane = dot(faceCenter, axes[axisIndex]);
+		const midpoint = (min[axisIndex] + max[axisIndex]) * 0.5;
+		const sideIndex = facePlane >= midpoint ? 1 : 0;
+		const targetPlane = sideIndex ? max[axisIndex] : min[axisIndex];
+		const planeTolerance = Math.max(allowedDeviation * 1.5, size[axisIndex] * 0.03);
+		if (Math.abs(facePlane - targetPlane) <= planeTolerance) {
+			sideCoverage[axisIndex][sideIndex] += geometry.area * Math.abs(alignmentByAxis[axisIndex]);
+		}
+	}
+	const minimumSideCoverage = Math.max(0.55, 0.88 - tolerance * 0.8);
+	for (let axis = 0; axis < 3; axis++) {
+		const otherAxes = [0, 1, 2].filter(index => index !== axis);
+		const expectedArea = size[otherAxes[0]] * size[otherAxes[1]];
+		if (expectedArea < EPSILON) return null;
+		for (let side = 0; side < 2; side++) {
+			if (sideCoverage[axis][side] / expectedArea < minimumSideCoverage) return null;
+		}
+	}
+
 	const mid = min.map((value, axis) => (value + max[axis]) * 0.5);
 	const center = add(
 		add(multiply(axes[0], mid[0]), multiply(axes[1], mid[1])),
@@ -265,7 +296,9 @@ function fitSolidCuboid(component, tolerance) {
 			if (Math.abs(alignmentByAxis[i]) > Math.abs(alignmentByAxis[axisIndex])) axisIndex = i;
 		}
 		if (Math.abs(alignmentByAxis[axisIndex]) < Math.cos(Math.degToRad(30))) continue;
-		const sign = alignmentByAxis[axisIndex] >= 0 ? 1 : -1;
+		const faceCenter = average(geometry.positions);
+		const facePlane = dot(faceCenter, axes[axisIndex]);
+		const sign = facePlane >= (min[axisIndex] + max[axisIndex]) * 0.5 ? 1 : -1;
 		const direction = DIRECTION_BY_AXIS[axisIndex][sign > 0 ? 1 : 0];
 		const side = sides[direction];
 		const faceCenter = average(geometry.positions);
