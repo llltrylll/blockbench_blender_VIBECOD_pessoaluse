@@ -170,7 +170,7 @@ export function updateCubeComponentOverlays() {
 		if (Modes.edit && mode !== 'object' && selection && (
 			(mode === 'vertex' && selection.vertices?.length) ||
 			(mode === 'edge' && selection.edges?.length) ||
-			(mode === 'face' && selection.faces?.length)
+			((mode === 'face' || mode === 'cluster') && selection.faces?.length)
 		)) {
 			overlay_cubes.add(cube);
 		} else {
