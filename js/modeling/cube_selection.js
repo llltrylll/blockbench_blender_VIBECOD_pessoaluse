@@ -106,9 +106,33 @@ export function updateCubeComponentOverlay(cube) {
 	mesh.add(group);
 }
 
+const overlay_cubes = new Set();
+
 export function updateCubeComponentOverlays() {
-	if (!Project || !Cube?.all) return;
-	Cube.all.forEach(cube => updateCubeComponentOverlay(cube));
+	if (!Project || !Cube) return;
+	const selected_cubes = Cube.selected.slice();
+	const selected_set = new Set(selected_cubes);
+
+	overlay_cubes.forEach(cube => {
+		if (!selected_set.has(cube)) {
+			removeOverlay(cube);
+			overlay_cubes.delete(cube);
+		}
+	});
+
+	selected_cubes.forEach(cube => {
+		updateCubeComponentOverlay(cube);
+		const selection = Project.mesh_selection?.[cube.uuid];
+		const mode = BarItems.selection_mode?.value;
+		if (Modes.edit && mode !== 'object' && selection && (
+			(mode === 'vertex' && selection.vertices?.length) ||
+			(mode === 'edge' && selection.edges?.length)
+		)) {
+			overlay_cubes.add(cube);
+		} else {
+			overlay_cubes.delete(cube);
+		}
+	});
 }
 
 if (typeof Blockbench !== 'undefined') {
