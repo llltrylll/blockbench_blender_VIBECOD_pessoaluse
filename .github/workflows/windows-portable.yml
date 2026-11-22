@@ -42,38 +42,47 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build portable Windows executable without publisher signing
+      - name: Build portable Windows executable without publisher certificate
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: |
           npm run build-electron
-          npx electron-builder --windows portable --publish=never --config.win.signAndEditExecutable=false
+          npx electron-builder --windows portable --publish=never --config.win.signExecutable=false
 
-      - name: Install WinRAR
+      - name: Package executable in RAR
         shell: pwsh
         run: |
-          winget install --id RARLab.WinRAR --exact --silent --accept-package-agreements --accept-source-agreements
-          $rar = @(
-            "$env:ProgramFiles\WinRAR\Rar.exe",
-            "${env:ProgramFiles(x86)}\WinRAR\Rar.exe"
-          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $rar) {
-            throw "Rar.exe not found after WinRAR installation."
-          }
-          $exe = Get-ChildItem -Path "dist-electron" -Filter "*.exe" -File |
-            Where-Object { $_.Name -match "x64" } |
+          $exe = Get-ChildItem -Path dist-electron -Filter *.exe -File |
+            Where-Object { $_.Name -notmatch 'uninstaller|setup' } |
+            Sort-Object Length -Descending |
             Select-Object -First 1
           if (-not $exe) {
-            throw "Portable x64 executable not found in dist-electron."
+            throw "Portable .exe not found in dist-electron"
           }
-          & $rar a -m5 -ep1 "Blockbench-Windows-portable.rar" $exe.FullName
-          if ($LASTEXITCODE -ne 0) {
-            throw "RAR compression failed with exit code $LASTEXITCODE."
-          }
-          Get-Item "Blockbench-Windows-portable.rar" | Format-List Name,Length
 
-      - name: Upload RAR artifact
+          choco install winrar --yes --no-progress
+          $rar = Join-Path $env:ProgramFiles 'WinRAR\Rar.exe'
+          if (-not (Test-Path $rar)) {
+            throw "WinRAR command-line executable not found: $rar"
+          }
+
+          $archive = Join-Path (Resolve-Path dist-electron) 'Blockbench-Windows-portable.rar'
+          & $rar a -ep1 $archive $exe.FullName
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $archive)) {
+            throw "RAR packaging failed"
+          }
+
+          & $rar t $archive
+          if ($LASTEXITCODE -ne 0) {
+            throw "RAR integrity test failed"
+          }
+
+          Write-Host "Packaged $($exe.Name) into $archive"
+
+      - name: Upload portable RAR
         uses: actions/upload-artifact@v4
         with:
           name: Blockbench-Windows-portable-RAR
-          path: Blockbench-Windows-portable.rar
+          path: dist-electron/Blockbench-Windows-portable.rar
           if-no-files-found: error
           retention-days: 3
