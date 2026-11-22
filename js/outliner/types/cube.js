@@ -296,18 +296,6 @@ export class Cube extends OutlinerElement {
 	getSize(axis, selection_only) {
 		return this.size(axis);
 	}
-	getSelectedVertices(make) {
-		if (make && !Project.mesh_selection[this.uuid]) Project.mesh_selection[this.uuid] = {vertices: [], edges: [], faces: []};
-		return Project.mesh_selection[this.uuid]?.vertices || [];
-	}
-	getSelectedEdges(make) {
-		if (make && !Project.mesh_selection[this.uuid]) Project.mesh_selection[this.uuid] = {vertices: [], edges: [], faces: []};
-		return Project.mesh_selection[this.uuid]?.edges || [];
-	}
-	getSelectedFaces(make) {
-		if (make && !Project.mesh_selection[this.uuid]) Project.mesh_selection[this.uuid] = {vertices: [], edges: [], faces: []};
-		return Project.mesh_selection[this.uuid]?.faces || [];
-	}
 	rotationAxis() {
 		for (var axis = 0; axis < 3; axis++) {
 			if (this.rotation[axis] !== 0) {
