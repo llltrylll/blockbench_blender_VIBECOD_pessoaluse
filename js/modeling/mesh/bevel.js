@@ -612,8 +612,11 @@ function runBevel(snapshots, amended, requestedWidth, requestedSegments) {
 		for (const entry of resolved.cubes) {
 			const {mesh, vertexKeys} = convertCubeToMesh(entry.cube);
 			const meshEdges = entry.snapshot.edges.map(edge => {
-				const a = vertexKeys[Number(edge[0])];
-				const b = vertexKeys[Number(edge[1])];
+				// Cube component indices follow getGlobalVertexPositions(), while
+				// the native Cube-to-Mesh converter uses a different order for 4-7.
+				const cubeIndexToMeshIndex = [0, 1, 2, 3, 5, 4, 7, 6];
+				const a = vertexKeys[cubeIndexToMeshIndex[Number(edge[0])]];
+				const b = vertexKeys[cubeIndexToMeshIndex[Number(edge[1])]];
 				if (!a || !b) throw new Error('Uma aresta do cuboide não pôde ser convertida para malha.');
 				return [a, b];
 			});
