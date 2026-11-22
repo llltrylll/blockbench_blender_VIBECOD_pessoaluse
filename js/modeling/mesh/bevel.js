@@ -183,16 +183,21 @@ function validateFace(mesh, face, key) {
 	}
 	return {vertices, positions, normal, longestEdge};
 }
-function analyzeMesh(mesh, requestedEdges) {
+function analyzeMesh(mesh, requestedEdges, isCube = false) {
 	const edges = uniqueEdges(requestedEdges);
 	if (!edges.length) throw new Error('Selecione uma ou mais arestas antes de aplicar o bevel.');
 
 	const adjacency = new Map();
+	const vertexFaces = new Map();
 	for (const faceKey in mesh.faces) {
 		const face = mesh.faces[faceKey];
 		if (face.vertices.length < 3) continue;
 		const vertices = face.vertices.length === 4 ? face.getSortedVertices() : face.vertices;
 		if (!vertices || vertices.length < 2) continue;
+		for (const vertexKey of vertices) {
+			if (!vertexFaces.has(vertexKey)) vertexFaces.set(vertexKey, []);
+			vertexFaces.get(vertexKey).push({faceKey, face});
+		}
 		for (let i = 0; i < vertices.length; i++) {
 			const a = vertices[i];
 			const b = vertices[(i + 1) % vertices.length];
@@ -209,7 +214,9 @@ function analyzeMesh(mesh, requestedEdges) {
 	for (const pair of edges) {
 		const adjacent = adjacency.get(edgeId(pair[0], pair[1]));
 		if (!adjacent || adjacent.length !== 2) {
-			throw new Error('Cada aresta selecionada precisa pertencer a exatamente duas faces.');
+			throw new Error(isCube
+				? 'Cada aresta do Cuboid precisa pertencer a duas faces existentes.'
+				: 'Cada aresta selecionada precisa pertencer a exatamente duas faces.');
 		}
 		const a = mesh.vertices[pair[0]];
 		const b = mesh.vertices[pair[1]];
@@ -240,6 +247,8 @@ function analyzeMesh(mesh, requestedEdges) {
 		faceClips,
 		faceData,
 		adjacency,
+		vertexFaces,
+		isCube,
 		minimumEdgeLength,
 		maxWidth: minimumEdgeLength * 0.35,
 	};
@@ -475,7 +484,7 @@ function makeEdgeWorks(analysis, facePlans, segments, factory) {
 	}
 	return works;
 }
-function makeCornerWorks(mesh, facePlans, edgeWorks, width) {
+function makeCornerWorks(mesh, facePlans, edgeWorks, width, vertexFaces, requireClosed) {
 	const edgeProfilesByVertex = new Map();
 	edgeWorks.forEach(work => {
 		[[work.edge.v0, work.profile0], [work.edge.v1, work.profile1]].forEach(([vertexKey, profile]) => {
@@ -542,15 +551,17 @@ function makeCornerWorks(mesh, facePlans, edgeWorks, width) {
 			}
 			// If there is no third face (open mesh boundary), leave the
 			// bevel profile open just as the source mesh boundary is open.
+			if (!terminalFaceFound && requireClosed) {
+				throw new Error('O bevel não conseguiu fechar um dos cantos do Cuboid. A operação foi cancelada.');
+			}
 			if (!terminalFaceFound) continue;
 			continue;
 		}
 
 		const incidentFaces = [];
 		const normalSum = [0, 0, 0];
-		for (const faceKey in mesh.faces) {
-			const face = mesh.faces[faceKey];
-			if (!face.vertices.includes(vertexKey) || face.vertices.length < 3) continue;
+		for (const {faceKey, face} of (vertexFaces.get(vertexKey) || [])) {
+			if (face.vertices.length < 3) continue;
 			const plan = facePlans.get(faceKey);
 			if (plan) {
 				const cornerRadius = width * 1.75 + EPSILON;
@@ -632,7 +643,7 @@ function faceNormalFromPoints(points) {
 function makeMeshPlan(mesh, analysis, width, segments, factory) {
 	const facePlans = makeFacePlans(analysis, width, factory);
 	const edgeWorks = makeEdgeWorks(analysis, facePlans, segments, factory);
-	const corners = makeCornerWorks(mesh, facePlans, edgeWorks, width);
+	const corners = makeCornerWorks(mesh, facePlans, edgeWorks, width, analysis.vertexFaces, analysis.isCube);
 	return {
 		mesh,
 		analysis,
@@ -673,6 +684,20 @@ function createGeneratedFace(mesh, points, texture, uvSource, expectedNormal, ke
 	mesh.addFaces(face);
 	return face;
 }
+function selectBevelTextureSource(work) {
+	const textureA = work.faceA.face.texture;
+	const textureB = work.faceB.face.texture;
+	const hasTextureA = typeof textureA === 'string' && textureA.length > 0;
+	const hasTextureB = typeof textureB === 'string' && textureB.length > 0;
+	if (hasTextureA && hasTextureB && textureA !== textureB) {
+		throw new Error('O bevel não pode unir faces do Cuboid que usam texturas diferentes. Use a mesma textura nas duas faces.');
+	}
+	if (hasTextureA) return work.faceA;
+	if (hasTextureB) return work.faceB;
+	if (textureA === false) return work.faceA;
+	if (textureB === false) return work.faceB;
+	return work.faceA;
+}
 function applyMeshPlan(plan) {
 	const {mesh, facePlans, edgeWorks, corners} = plan;
 	const keyMap = new Map();
@@ -684,6 +709,7 @@ function applyMeshPlan(plan) {
 
 	const selectedRails = [];
 	for (const work of edgeWorks) {
+		const textureSource = selectBevelTextureSource(work);
 		const averageNormal = normalize(add(work.faceA.info.normal, work.faceB.info.normal));
 		const expectedNormal = length(averageNormal) > EPSILON ? averageNormal : work.faceA.info.normal;
 		for (let i = 0; i < work.profile0.length - 1; i++) {
@@ -693,7 +719,7 @@ function applyMeshPlan(plan) {
 				work.profile1[i + 1],
 				work.profile0[i + 1],
 			];
-			createGeneratedFace(mesh, quad, work.faceA.face.texture, work.faceA.face, expectedNormal, keyMap, pointMap);
+			createGeneratedFace(mesh, quad, textureSource.face.texture, textureSource.face, expectedNormal, keyMap, pointMap);
 		}
 		for (let i = 0; i < work.profile0.length; i++) {
 			const a = pointKey(work.profile0[i], keyMap, pointMap, mesh);
@@ -828,11 +854,11 @@ function runBevel(snapshots, amended, requestedWidth, requestedSegments) {
 			});
 			mesh.getSelectedEdges(true).replace(meshEdges);
 			mesh.getSelectedVertices(true).replace(Array.from(new Set(meshEdges.flat())));
-			targets.push({mesh, edges: meshEdges});
+			targets.push({mesh, edges: meshEdges, isCube: true});
 		}
 
 		if (!targets.length) throw new Error('Nenhuma aresta válida foi encontrada.');
-		const analyses = targets.map(target => analyzeMesh(target.mesh, target.edges));
+		const analyses = targets.map(target => analyzeMesh(target.mesh, target.edges, target.isCube));
 		const maximumWidth = Math.min(...analyses.map(analysis => analysis.maxWidth));
 		const defaultWidth = Math.min(...analyses.map(analysis => analysis.minimumEdgeLength * 0.1));
 		if (!(maximumWidth > EPSILON)) throw new Error('A malha é pequena demais para receber bevel.');
