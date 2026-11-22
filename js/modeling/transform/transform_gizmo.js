@@ -1067,6 +1067,7 @@ import { TransformerModule } from "./transform_modules";
 				var worldPosition = new THREE.Vector3();
 				var worldRotation = new THREE.Euler();
 				var camPosition = new THREE.Vector3();
+				var lastPointer = null;
 
 
 			this.setMode = function ( mode ) {
@@ -1179,6 +1180,7 @@ import { TransformerModule } from "./transform_modules";
 				}, 16)
 			}
 			this.setCanvas = function(canvas) {
+				document.removeEventListener("keydown", onAxisShortcut, false);
 				if (this.canvas) {
 					this.canvas.removeEventListener( "mousedown", onPointerDown );
 					this.canvas.removeEventListener( "touchstart", onPointerDown );
@@ -1193,6 +1195,7 @@ import { TransformerModule } from "./transform_modules";
 
 				this.canvas.addEventListener( "mousemove", onPointerHover, false );
 				this.canvas.addEventListener( "touchmove", onPointerHover, {passive: true} );
+				document.addEventListener("keydown", onAxisShortcut, false);
 
 			}
 			this.setCanvas(domElement)
@@ -1264,6 +1267,40 @@ import { TransformerModule } from "./transform_modules";
 				_gizmo[ _mode ].highlight( scope.axis );
 			}
 
+			function onAxisShortcut(event) {
+				if (!_dragging || !scope.dragging || !scope.axis || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+				const key = String(event.key || '').toLowerCase();
+				// Blockbench is Y-up; Blender is Z-up. Keep X and swap the Y/Z shortcuts.
+				const axis = key === 'x' ? 'X' : key === 'y' ? 'Z' : key === 'z' ? 'Y' : null;
+				if (!axis || scope.axis === axis || !lastPointer) return;
+				if (event.target && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName))) return;
+
+				const module = TransformerModule.active;
+				// Change the constraint before the first movement so the object never jumps.
+				if (module && module.has_changed) return;
+
+				scope.camera.updateMatrixWorld();
+				scope.getWorldPosition(worldPosition);
+				camPosition.setFromMatrixPosition(scope.camera.matrixWorld);
+				eye.copy(camPosition).sub(worldPosition).normalize();
+				_gizmo[_mode].setActivePlane(axis, eye);
+				const planeHit = intersectObjects(lastPointer, [_gizmo[_mode].activePlane]);
+				if (!planeHit) return;
+
+				scope.axis = axis;
+				offset.copy(planeHit.point);
+				if (module) {
+					module.previous_value = null;
+					module.initial_value = null;
+				}
+				if (Toolbox.selected.id === 'resize_tool' || Toolbox.selected.id === 'stretch_tool') scope.direction = true;
+				scope.update();
+				extendTransformLine(true);
+				scope.dispatchEvent(changeEvent);
+				event.preventDefault();
+				event.stopPropagation();
+			}
+
 			function onPointerHover( event ) {
 
 				if ( !scope.visible || ( event.button !== undefined && event.button !== 0 ) ) return;
@@ -1295,6 +1332,7 @@ import { TransformerModule } from "./transform_modules";
 
 				if ( !scope.visible || _dragging === true || ( event.button !== undefined && event.button !== 0  ) ) return;
 				var pointer = event.changedTouches ? event.changedTouches[ 0 ] : event;
+				lastPointer = {clientX: pointer.clientX, clientY: pointer.clientY};
 				if ( pointer.button === 0 || pointer.button === undefined ) {
 
 					var intersect = intersectObjects( pointer, _gizmo[ _mode ].pickers.children ) || SplineGizmos.interesct(pointer, intersectObjects);
@@ -1362,6 +1400,7 @@ import { TransformerModule } from "./transform_modules";
 				if ( !scope.visible || scope.axis === null || _dragging === false || ( event.button !== undefined && event.button !== 0 ) ) return;
 
 				var pointer = event.changedTouches ? event.changedTouches[ 0 ] : event;
+				lastPointer = {clientX: pointer.clientX, clientY: pointer.clientY};
 				var planeIntersect = intersectObjects( pointer, [ _gizmo[ _mode ].activePlane ] );
 				if (!planeIntersect) return;
 
@@ -1484,6 +1523,7 @@ import { TransformerModule } from "./transform_modules";
 				} else {
 					onPointerHover( event );
 				}
+				lastPointer = null;
 			}
 			function intersectObjects( pointer, objects ) {
 
