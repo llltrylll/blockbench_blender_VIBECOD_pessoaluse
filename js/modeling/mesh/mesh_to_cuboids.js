@@ -269,7 +269,7 @@ function fitSolidCuboid(component, tolerance) {
 			sideCoverage[axisIndex][sideIndex] += geometry.area * Math.abs(alignmentByAxis[axisIndex]);
 		}
 	}
-	const minimumSideCoverage = Math.max(0.55, 0.88 - tolerance * 0.8);
+	const minimumSideCoverage = Math.max(0.35, 0.60 - tolerance * 0.8);
 	for (let axis = 0; axis < 3; axis++) {
 		const otherAxes = [0, 1, 2].filter(index => index !== axis);
 		const expectedArea = size[otherAxes[0]] * size[otherAxes[1]];
