@@ -237,7 +237,7 @@ export class Preview {
 	camPers: THREE.PerspectiveCamera
 	camOrtho: THREE.OrthographicCamera & {axis: string, backgroundHandle: any}
 	controls: any
-	walkNavigation: WalkNavigation
+	walkNavigation?: WalkNavigation
 	annotations: Record<string, PreviewAnnotation>
 	offscreen?: boolean
 	renderer: THREE.WebGLRenderer
@@ -354,7 +354,7 @@ export class Preview {
 
 		//Controls
 		this.controls = new OrbitControls(this.camPers, this);
-		this.walkNavigation = new WalkNavigation(this.controls);
+		this.walkNavigation = this.offscreen ? null : new WalkNavigation(this.controls);
 		this.controls.minDistance = 1;
 		this.controls.maxDistance = settings.maximum_zoom_distance.value as number;
 		this.controls.enableKeys = false;
@@ -1913,7 +1913,7 @@ export class Preview {
 		}
 	}
 	delete() {
-		this.walkNavigation.dispose();
+		this.walkNavigation?.dispose();
 		this.renderer.dispose();
 		this.renderer.forceContextLoss()
 		this.canvas.remove();
@@ -2725,7 +2725,7 @@ BARS.defineActions(function() {
 			let preview = Preview.selected;
 			if (!preview) return;
 			if (preview.isOrtho) preview.setProjectionMode(false, true);
-			preview.walkNavigation.toggle();
+			preview.walkNavigation?.toggle();
 		}
 	})
 	new Action('focus_on_selection', {
