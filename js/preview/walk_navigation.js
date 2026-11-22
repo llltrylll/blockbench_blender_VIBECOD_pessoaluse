@@ -92,6 +92,7 @@ export default class WalkNavigation {
 		this.active = true;
 		this.temporarilyUnlocked = false;
 		this.cancelOnExit = false;
+		this.suppressNextContextMenu = false;
 		this.previousControlsEnabled = this.controls.enabled;
 		this.previousFov = camera.fov;
 		this.savedPose = {
@@ -230,15 +231,19 @@ export default class WalkNavigation {
 	onPointerDown(event) {
 		if (!this.active || (event.button !== 0 && event.button !== 2)) return;
 		if (this.fovPanel?.contains(event.target)) return;
+		const insidePreview = event.target === this.canvas || this.canvas.contains(event.target);
+		if (this.temporarilyUnlocked && !insidePreview) {
+			this.cancelOnExit = event.button === 2;
+			this.stop();
+			return;
+		}
+		if (!insidePreview) return;
 		event.preventDefault();
 		event.stopImmediatePropagation();
 		this.suppressNextContextMenu = true;
 		this.cancelOnExit = event.button === 2;
-		if (this.temporarilyUnlocked) {
-			this.stop();
-		} else {
-			document.exitPointerLock?.();
-		}
+		if (this.temporarilyUnlocked) this.stop();
+		else document.exitPointerLock?.();
 	}
 
 	stop() {
