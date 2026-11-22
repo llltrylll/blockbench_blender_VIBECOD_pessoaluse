@@ -151,10 +151,7 @@
 		"collapse_groups": null,
 		"unfold_groups": null,
 		"edit_bedrock_binding": null,
-		"add_mesh": {
-			"key": 65,
-			"shift": true
-		},
+		"add_mesh": null,
 		"selection_mode": null,
 		"create_face": {
 			"key": 70
@@ -191,8 +188,8 @@
 		"split_mesh": null,
 		"import_obj": null,
 		"add_cube": {
-			"key": 78,
-			"ctrl": true
+			"key": 65,
+			"shift": true
 		},
 		"edit_material_instances": null,
 		"add_texture_mesh": null,
