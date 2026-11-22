@@ -59,7 +59,10 @@ SharedActions.add('delete', {
 			cubes.forEach(cube => {
 				const selected_faces = getCubeComponentSelection(cube).faces.slice();
 				selected_faces.forEach(face_key => {
-					if (cube.faces[face_key]) cube.faces[face_key].enabled = false;
+					if (cube.faces[face_key]) {
+						cube.faces[face_key].enabled = false;
+						cube.faces[face_key].texture = null;
+					}
 				});
 				clearCubeComponentSelection(cube);
 			});
