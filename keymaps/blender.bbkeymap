@@ -52,7 +52,7 @@
 			"key": 113
 		},
 		"delete": {
-			"key": 46
+			"key": 88
 		},
 		"duplicate": {
 			"key": 68,
@@ -82,18 +82,10 @@
 		"export_theme": null,
 		"reset_layout": null,
 		"about_window": null,
-		"edit": {
-			"key": 49
-		},
-		"paint": {
-			"key": 50
-		},
-		"display": {
-			"key": 51
-		},
-		"animate": {
-			"key": 52
-		},
+		"edit": null,
+		"paint": null,
+		"display": null,
+		"animate": null,
 		"keybindings_window": null,
 		"load_keymap": null,
 		"import_keymap": null,
