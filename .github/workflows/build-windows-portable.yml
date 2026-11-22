@@ -29,7 +29,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: |
           npm run build-electron
-          npx electron-builder --windows portable --publish=never --config.win.signAndEditExecutable=false
+          npx electron-builder --windows portable --publish=never --config.win.signExecutable=false
 
       - name: Package executable in RAR
         shell: pwsh
