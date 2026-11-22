@@ -10,6 +10,7 @@ import './mesh/import_obj'
 import { autoFixMeshEdit } from './mesh/auto_fix'
 import { sameMeshEdge } from './mesh/util';
 import { getSpatialInterval } from './transform';
+import { CUBE_EDGE_INDICES, sameCubeEdge } from './cube_selection';
 
 export function uncorruptMesh() {
 	for (let mesh of Mesh.selected) {
@@ -270,7 +271,7 @@ BARS.defineActions(function() {
 			vertex: {name: true, icon: 'fiber_manual_record'},
 		},
 		icon_mode: true,
-		condition: () => Modes.edit && Mesh.selected.length && Toolbox.selected.id != 'knife_tool',
+		condition: () => Modes.edit && (Mesh.selected.length || Cube.selected.length) && Toolbox.selected.id != 'knife_tool',
 		onChange({value}) {
 			if (value == 'cluster') value = 'face';
 			if (value === previous_selection_mode) return;
@@ -354,11 +355,76 @@ BARS.defineActions(function() {
 					edges.empty();
 				})
 			}
+
+			// Native Cube component selection. Selection data stays temporary in Project.mesh_selection.
+			Cube.selected.forEach(cube => {
+				const vertices = cube.getSelectedVertices(true);
+				const edges = cube.getSelectedEdges(true);
+				const faces = cube.getSelectedFaces(true);
+				const uv_faces = UVEditor.getSelectedFaces(cube, true);
+
+				if (value === 'object') {
+					delete Project.mesh_selection[cube.uuid];
+					uv_faces.empty();
+					return;
+				}
+
+				if (value === 'face') {
+					if (['edge', 'vertex'].includes(previous_selection_mode)) {
+						const selected_faces = Object.keys(cube.faces).filter(fkey => {
+							return cube.faces[fkey].getVertexIndices().every(index => vertices.includes(String(index)));
+						});
+						faces.replace(selected_faces);
+						uv_faces.replace(selected_faces);
+					} else {
+						faces.replace(uv_faces.slice());
+					}
+					vertices.empty();
+					edges.empty();
+					return;
+				}
+
+				if (value === 'edge') {
+					const previous_faces = previous_selection_mode === 'face'
+						? uv_faces.slice()
+						: [];
+					edges.empty();
+					if (previous_faces.length) {
+						previous_faces.forEach(fkey => {
+							const indices = cube.faces[fkey]?.getVertexIndices().map(String) || [];
+							CUBE_EDGE_INDICES.forEach(edge => {
+								if (!indices.includes(edge[0]) || !indices.includes(edge[1])) return;
+								if (!edges.find(edge2 => sameCubeEdge(edge2, edge))) edges.push(edge.slice());
+								vertices.safePush(...edge);
+							});
+						});
+					} else if (previous_selection_mode === 'vertex') {
+						CUBE_EDGE_INDICES.forEach(edge => {
+							if (vertices.includes(edge[0]) && vertices.includes(edge[1])) edges.push(edge.slice());
+						});
+					}
+					faces.empty();
+					uv_faces.empty();
+					return;
+				}
+
+				if (value === 'vertex') {
+					if (previous_selection_mode === 'face') {
+						vertices.empty();
+						uv_faces.forEach(fkey => {
+							cube.faces[fkey]?.getVertexIndices().forEach(index => vertices.safePush(String(index)));
+						});
+					}
+					edges.empty();
+					faces.empty();
+					uv_faces.empty();
+				}
+			});
 			updateSelection();
 			previous_selection_mode = value;
 		}
 	})
-	
+
 	new Action('create_face', {
 		icon: 'fas.fa-draw-polygon',
 		category: 'edit',
