@@ -1,5 +1,5 @@
-export class UndoSystem {
 import { getCubeComponentSelection, setCubeComponentSelection } from './modeling/cube_selection_data';
+export class UndoSystem {
 	constructor() {
 		this.index = 0;
 		this.history = [];
