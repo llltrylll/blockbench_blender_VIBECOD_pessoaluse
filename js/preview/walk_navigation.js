@@ -12,7 +12,7 @@ export default class WalkNavigation {
 		this.keys = new Set();
 		this.frame = 0;
 		this.lastTime = 0;
-		this.speed = 24;
+		this.speed = 18;
 		this.sensitivity = 0.0022;
 		this.yaw = 0;
 		this.pitch = 0;
@@ -23,11 +23,13 @@ export default class WalkNavigation {
 		this.onKeyDown = this.onKeyDown.bind(this);
 		this.onKeyUp = this.onKeyUp.bind(this);
 		this.update = this.update.bind(this);
+		this.onWindowBlur = this.onWindowBlur.bind(this);
 
 		document.addEventListener('pointerlockchange', this.onPointerLockChange);
 		document.addEventListener('mousemove', this.onMouseMove);
 		document.addEventListener('keydown', this.onKeyDown, true);
 		document.addEventListener('keyup', this.onKeyUp, true);
+		window.addEventListener('blur', this.onWindowBlur);
 	}
 
 	toggle() {
@@ -83,7 +85,7 @@ export default class WalkNavigation {
 		this.pitch = Math.asin(Math.max(-1, Math.min(1, direction.y)));
 		this.lastTime = performance.now();
 		this.frame = requestAnimationFrame(this.update);
-		Blockbench.showQuickMessage('First person: WASD · Mouse · Space/Ctrl · Shift faster · Esc exit', 4500);
+		Blockbench.showQuickMessage('First person: WASD · Q/E vertical · Mouse · Shift faster · Esc exit', 4500);
 	}
 
 	stop() {
@@ -107,6 +109,8 @@ export default class WalkNavigation {
 		this.yaw -= (event.movementX || 0) * this.sensitivity;
 		this.pitch -= (event.movementY || 0) * this.sensitivity;
 		this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
+		event.preventDefault();
+		event.stopPropagation();
 
 		const camera = this.controls.object;
 		if (!camera || !camera.isPerspectiveCamera) {
@@ -130,10 +134,14 @@ export default class WalkNavigation {
 		}
 		if (event.code === 'Backquote' && event.ctrlKey) return;
 
-		const movementKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight'];
+		const movementKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ShiftLeft', 'ShiftRight'];
 		if (movementKeys.includes(event.code)) this.keys.add(event.code);
 		event.preventDefault();
 		event.stopImmediatePropagation();
+	}
+
+	onWindowBlur() {
+		this.keys.clear();
 	}
 
 	onKeyUp(event) {
@@ -155,17 +163,18 @@ export default class WalkNavigation {
 			document.exitPointerLock?.();
 			return;
 		}
-		const forward = camera.getWorldDirection(new THREE.Vector3()).normalize();
-		const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-		const up = camera.up.clone().normalize();
+		// Keep WASD movement on the horizontal plane; looking up/down must not make the camera fly.
+		const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).normalize();
+		const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).normalize();
+		const up = new THREE.Vector3(0, 1, 0);
 		const movement = new THREE.Vector3();
 
 		if (this.keys.has('KeyW')) movement.add(forward);
 		if (this.keys.has('KeyS')) movement.sub(forward);
 		if (this.keys.has('KeyD')) movement.add(right);
 		if (this.keys.has('KeyA')) movement.sub(right);
-		if (this.keys.has('Space')) movement.add(up);
-		if (this.keys.has('ControlLeft') || this.keys.has('ControlRight')) movement.sub(up);
+		if (this.keys.has('KeyQ')) movement.add(up);
+		if (this.keys.has('KeyE')) movement.sub(up);
 
 		if (movement.lengthSq() > 0) {
 			movement.normalize();
@@ -185,5 +194,6 @@ export default class WalkNavigation {
 		document.removeEventListener('mousemove', this.onMouseMove);
 		document.removeEventListener('keydown', this.onKeyDown, true);
 		document.removeEventListener('keyup', this.onKeyUp, true);
+		window.removeEventListener('blur', this.onWindowBlur);
 	}
 }
