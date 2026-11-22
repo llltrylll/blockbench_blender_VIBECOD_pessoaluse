@@ -531,18 +531,15 @@ function makeCornerWorks(mesh, facePlans, edgeWorks, width) {
 						plan.info.vertices
 					).toArray(),
 				}));
-				const orderedProfile = current => current.id === startPoint.id
-					? projectedProfile
-					: projectedProfile.slice().reverse();
 				const corrected = [];
 				for (let i = 0; i < polygon.length; i++) {
 					const current = polygon[i];
 					const next = polygon[(i + 1) % polygon.length];
 					corrected.push(current);
 					if (current.id === startPoint.id && next.id === endPoint.id) {
-						corrected.push(...orderedProfile(current));
+						corrected.push(...projectedProfile);
 					} else if (current.id === endPoint.id && next.id === startPoint.id) {
-						corrected.push(...orderedProfile(next));
+						corrected.push(...projectedProfile.slice().reverse());
 					}
 				}
 				plan.polygon = cleanPolygon(corrected);
