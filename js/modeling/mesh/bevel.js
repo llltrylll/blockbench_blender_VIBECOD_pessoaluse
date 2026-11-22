@@ -120,28 +120,26 @@ function cleanPolygon(points) {
 	return result;
 }
 function clipPolygon(points, plane, width, factory) {
-	let output = points.slice();
-	for (let i = 0; i < points.length && output.length; i++) {
-		const input = output;
-		output = [];
-		const previous = input[input.length - 1];
-		let previousDistance = dot(subtract(previous.position, plane.origin), plane.inward) - width;
-		let previousInside = previousDistance >= -EPSILON;
-		for (const current of input) {
-			const currentDistance = dot(subtract(current.position, plane.origin), plane.inward) - width;
-			const currentInside = currentDistance >= -EPSILON;
-			if (currentInside !== previousInside) {
-				const denominator = previousDistance - currentDistance;
-				const amount = Math.abs(denominator) < EPSILON ? 0.5 : Math.clamp(previousDistance / denominator, 0, 1);
-				output.push(interpolatePoint(previous, current, amount, factory));
-			}
-			if (currentInside) output.push(current);
-			previousDistance = currentDistance;
-			previousInside = currentInside;
+	const output = [];
+	if (!points.length) return output;
+	const previousStart = points[points.length - 1];
+	let previous = previousStart;
+	let previousDistance = dot(subtract(previous.position, plane.origin), plane.inward) - width;
+	let previousInside = previousDistance >= -EPSILON;
+	for (const current of points) {
+		const currentDistance = dot(subtract(current.position, plane.origin), plane.inward) - width;
+		const currentInside = currentDistance >= -EPSILON;
+		if (currentInside !== previousInside) {
+			const denominator = previousDistance - currentDistance;
+			const amount = Math.abs(denominator) < EPSILON ? 0.5 : Math.clamp(previousDistance / denominator, 0, 1);
+			output.push(interpolatePoint(previous, current, amount, factory));
 		}
-		output = cleanPolygon(output);
+		if (currentInside) output.push(current);
+		previous = current;
+		previousDistance = currentDistance;
+		previousInside = currentInside;
 	}
-	return output;
+	return cleanPolygon(output);
 }
 function faceNormal(face) {
 	const normal = face.getNormal(true);
@@ -191,14 +189,13 @@ function analyzeMesh(mesh, requestedEdges) {
 	if (!edges.length) throw new Error('Selecione uma ou mais arestas antes de aplicar o bevel.');
 
 	const adjacency = new Map();
-	const faceData = new Map();
 	for (const faceKey in mesh.faces) {
 		const face = mesh.faces[faceKey];
-		const info = validateFace(mesh, face, faceKey);
-		faceData.set(faceKey, info);
-		for (let i = 0; i < info.vertices.length; i++) {
-			const a = info.vertices[i];
-			const b = info.vertices[(i + 1) % info.vertices.length];
+		const vertices = face.vertices.length === 4 ? face.getSortedVertices() : face.vertices;
+		if (!vertices || vertices.length < 2) continue;
+		for (let i = 0; i < vertices.length; i++) {
+			const a = vertices[i];
+			const b = vertices[(i + 1) % vertices.length];
 			const id = edgeId(a, b);
 			if (!adjacency.has(id)) adjacency.set(id, []);
 			adjacency.get(id).push({faceKey, face, a, b});
@@ -207,6 +204,7 @@ function analyzeMesh(mesh, requestedEdges) {
 
 	const selectedEdges = [];
 	const faceClips = new Map();
+	const faceData = new Map();
 	let minimumEdgeLength = Infinity;
 	for (const pair of edges) {
 		const adjacent = adjacency.get(edgeId(pair[0], pair[1]));
@@ -216,15 +214,18 @@ function analyzeMesh(mesh, requestedEdges) {
 		const a = mesh.vertices[pair[0]];
 		const b = mesh.vertices[pair[1]];
 		if (!a || !b) throw new Error('Uma aresta selecionada perdeu um dos seus vértices.');
-		const edgeLength = length(subtract(b, a));
-		if (edgeLength < EPSILON) throw new Error('Uma das arestas selecionadas tem comprimento zero.');
+		if (length(subtract(b, a)) < EPSILON) throw new Error('Uma das arestas selecionadas tem comprimento zero.');
+
 		selectedEdges.push({v0: pair[0], v1: pair[1], adjacent});
 		adjacent.forEach(entry => {
+			if (!faceData.has(entry.faceKey)) {
+				faceData.set(entry.faceKey, validateFace(mesh, entry.face, entry.faceKey));
+			}
 			if (!faceClips.has(entry.faceKey)) faceClips.set(entry.faceKey, []);
 			faceClips.get(entry.faceKey).push({v0: pair[0], v1: pair[1]});
-			const data = faceData.get(entry.faceKey);
-			minimumEdgeLength = Math.min(minimumEdgeLength, ...data.vertices.map((key, index) => {
-				const next = data.vertices[(index + 1) % data.vertices.length];
+			const info = faceData.get(entry.faceKey);
+			minimumEdgeLength = Math.min(minimumEdgeLength, ...info.vertices.map((key, index) => {
+				const next = info.vertices[(index + 1) % info.vertices.length];
 				return length(subtract(mesh.vertices[next], mesh.vertices[key]));
 			}));
 		});
@@ -492,15 +493,6 @@ function applyMeshPlan(plan, width) {
 	for (const facePlan of facePlans.values()) {
 		facePlan.info.vertices.forEach(key => oldAffectedVertices.add(key));
 	}
-	for (const facePlan of facePlans.values()) {
-		const keys = facePlan.polygon.map(point => pointKey(point, keyMap, pointMap, mesh));
-		if (new Set(keys).size !== keys.length) throw new Error('O recorte gerou vértices duplicados em uma face.');
-		const uv = {};
-		facePlan.polygon.forEach((point, index) => {
-			uv[keys[index]] = point.uv.slice();
-		});
-		facePlan.face.extend({vertices: keys, uv});
-	}
 
 	const selectedRails = [];
 	for (const work of edgeWorks) {
@@ -546,6 +538,17 @@ function applyMeshPlan(plan, width) {
 		}
 	}
 
+
+	for (const facePlan of facePlans.values()) {
+		const keys = facePlan.polygon.map(point => pointKey(point, keyMap, pointMap, mesh));
+		if (new Set(keys).size !== keys.length) throw new Error('O recorte gerou vértices duplicados em uma face.');
+		const uv = {};
+		facePlan.polygon.forEach((point, index) => {
+			uv[keys[index]] = point.uv.slice();
+		});
+		facePlan.face.extend({vertices: keys, uv});
+	}
+
 	const usedVertices = new Set();
 	for (const faceKey in mesh.faces) {
 		mesh.faces[faceKey].vertices.forEach(key => usedVertices.add(key));
@@ -555,7 +558,7 @@ function applyMeshPlan(plan, width) {
 	});
 
 	plan.analysis.selectedEdges.forEach(edge => {
-		delete mesh.seams[edgeId(edge.v0, edge.v1)];
+		delete mesh.seams[edge.v0 < edge.v1 ? edge.v0 + '_' + edge.v1 : edge.v1 + '_' + edge.v0];
 	});
 	mesh.getSelectedEdges(true).replace(uniqueEdges(selectedRails));
 	mesh.getSelectedVertices(true).replace(Array.from(new Set(selectedRails.flat())));
@@ -589,6 +592,7 @@ function resolveSnapshots(snapshots) {
 function runBevel(snapshots, amended, requestedWidth, requestedSegments) {
 	let currentCubes = [];
 	let currentMeshes = [];
+	let editStarted = false;
 	try {
 		const resolved = resolveSnapshots(snapshots);
 		currentCubes = resolved.cubes.map(entry => entry.cube);
@@ -599,6 +603,7 @@ function runBevel(snapshots, amended, requestedWidth, requestedSegments) {
 			outliner: currentCubes.length > 0,
 			selection: true,
 		}, amended);
+		editStarted = true;
 
 		const targets = currentMeshes.map(entry => {
 			entry.mesh.getSelectedEdges(true).replace(entry.snapshot.edges);
@@ -622,9 +627,10 @@ function runBevel(snapshots, amended, requestedWidth, requestedSegments) {
 		const maximumWidth = Math.min(...analyses.map(analysis => analysis.maxWidth));
 		const defaultWidth = Math.min(...analyses.map(analysis => analysis.minimumEdgeLength * 0.1));
 		if (!(maximumWidth > EPSILON)) throw new Error('A malha é pequena demais para receber bevel.');
+		const minimumWidth = Math.min(0.001, maximumWidth * 0.001);
 		const width = requestedWidth == null
 			? defaultWidth
-			: Math.clamp(Number(requestedWidth), 0.001, maximumWidth);
+			: Math.clamp(Number(requestedWidth), minimumWidth, maximumWidth);
 		const segments = Math.clamp(Math.round(Number(requestedSegments) || 1), 1, 12);
 		const plans = [];
 		for (let i = 0; i < targets.length; i++) {
@@ -645,12 +651,14 @@ function runBevel(snapshots, amended, requestedWidth, requestedSegments) {
 			element_aspects: {geometry: true, uv: true, faces: true},
 			selection: true,
 		});
-		return {defaultWidth, maximumWidth};
+		return {defaultWidth, maximumWidth, minimumWidth};
 	} catch (error) {
-		Undo.cancelEdit(true);
-		Undo.cancelSelection(true);
+		if (editStarted) {
+			Undo.cancelEdit(true);
+			if (Undo.current_selection_save) Undo.cancelSelection(true);
+		}
 		updateSelection();
-		Canvas.updateView({elements: currentMeshes, element_aspects: {geometry: true, uv: true, faces: true}, selection: true});
+		if (editStarted) Canvas.updateView({elements: currentMeshes, element_aspects: {geometry: true, uv: true, faces: true}, selection: true});
 		Blockbench.showQuickMessage(error?.message || 'Não foi possível aplicar o bevel.', 4000);
 		return null;
 	}
@@ -675,7 +683,7 @@ new Action('bevel_edges', {
 			width: {
 				type: 'num_slider',
 				value: result.defaultWidth,
-				min: 0.001,
+				min: result.minimumWidth,
 				max: result.maximumWidth,
 				label: 'Width',
 				interval_type: 'position',
