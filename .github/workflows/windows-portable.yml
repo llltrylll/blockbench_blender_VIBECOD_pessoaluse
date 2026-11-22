@@ -42,8 +42,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build portable Windows executable
-        run: npm run build-test-portable
+      - name: Build portable Windows executable without publisher signing
+        run: |
+          npm run build-electron
+          npx electron-builder --windows portable --publish=never --config.win.signAndEditExecutable=false
 
       - name: Install WinRAR
         shell: pwsh
