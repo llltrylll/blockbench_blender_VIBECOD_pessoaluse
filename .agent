@@ -1,1 +1,73 @@
-PLACEHOLDER
+# AGENT — BLOCKBENCH FORK / CPM
+
+## Mission
+O objetivo final é uma experiência de modelagem sólida para Customizable Player Models (CPM). Nesta fase, trabalhar exclusivamente na modelagem, importação, edição e organização de geometria necessária ao CPM. Não expandir para outras áreas sem necessidade direta ou autorização.
+
+## Branches: limite absoluto de 8
+Estrutura:
+- `master`: base estável do fork; não usar para experimentos.
+- `software-atual`: versão utilizável atual.
+- `backup-1`, `backup-2`: pontos de restauração.
+- `ancora`: preservação inviolável.
+- `teste-1`, `teste-2`, `teste-3`: desenvolvimento e testes.
+
+Antes de operações Git, verificar branches, branch atual, estado do working tree e remotes. Nunca ultrapassar 8 branches. Não apagar, renomear ou substituir branches existentes para reorganizar sem autorização. Reutilizar os três slots de teste.
+
+### Âncora — regra absoluta
+Nunca modificar, fazer commit, merge, rebase, reset, cherry-pick, apagar, renomear ou sobrescrever `ancora`. Nunca usá-la como branch de trabalho ou destino. Só alterar mediante ordem explícita e inequívoca do usuário. Se houver risco de afetá-la, interromper antes.
+
+### Backups
+Não sobrescrever, apagar, renomear ou reescrever `backup-1` ou `backup-2` sem autorização explícita. Antes de mudanças arriscadas, verificar se os backups existem e o que preservam. Não substituir backups importantes por conta própria.
+
+## Repositório
+Modificar exclusivamente o fork do usuário: `llltrylll/blockbench_blender_VIBECOD_pessoaluse`. O original/upstream é somente leitura. Não enviar commits, pushes, PRs, issues, comentários, releases ou contribuições ao original. Não criar outro fork. Antes de qualquer operação remota, confirmar o destino; nunca confiar apenas no nome do remote.
+
+## Alterações no core
+É permitido alterar o core do fork. Mudanças localizadas e reversíveis de baixo/médio risco podem ser feitas dentro do mandato, com testes.
+
+Mudanças de alto risco exigem aviso e decisão prévia do usuário. Explicar:
+1. O que será alterado e por quê.
+2. Sistemas, formatos e compatibilidade afetados.
+3. Risco concreto de regressão/perda.
+4. Plano de teste e reversão.
+
+Alto risco inclui: serialização/formato de projetos, migrações, carregamento/salvamento, codecs/importadores/exportadores, arquitetura ampla de geometria, API pública de plugins, renderer/backend/dependências, build/runtime e operações Git destrutivas. Na dúvida, tratar como alto risco e avisar.
+
+## Proteção e procedimento
+Antes de trabalhar: confirmar fork e branch; verificar mudanças locais não commitadas; identificar a versão/build funcional; ler o código relacionado. Nunca descartar ou sobrescrever trabalho local.
+
+Durante: alterações rastreáveis, escopo restrito, sem refatorações irrelevantes nem remoção de funções existentes sem explicar.
+
+Depois: compilar e executar quando possível; testar a função afetada e regressões de modelagem/CPM; informar arquivos alterados, testes reais e limitações. Nunca declarar correção não testada. Não promover teste a `software-atual` sem validação.
+
+## Critério CPM
+Avaliar a melhoria no fluxo CPM, não apenas pela aparência no viewport. Verificar, quando aplicável:
+- elementos compatíveis e preservação de Cube/cuboids;
+- evitar fragmentação desnecessária;
+- hierarquia, pivôs, transformações, dimensões e orientação;
+- UVs/texturas;
+- salvar, fechar e reabrir sem perda;
+- importação/exportação CPM quando fizer parte do teste.
+
+Não converter tudo para Mesh quando o objetivo for manter cubos nativos. Se conversão for necessária, explicar a consequência e preservar retorno quando possível.
+
+## Escopo e comunicação
+Prioridade: modelagem CPM estável e produtiva. Não iniciar melhorias em outras áreas por iniciativa própria. Distinguir comportamento existente, hipótese, implementação e resultado testado. Ser direto e não pedir aprovação para tarefas rotineiras de baixo/médio risco. Pedir decisão antes de alto risco ou possível violação das regras.
+
+## Controles solicitados
+- `G`: ferramenta de movimentação.
+- `S`: escala/redimensionamento.
+- `R`: rotação.
+- Nesta primeira entrega, mouse opera os gizmos existentes. Não chamar isso de transformação modal completa do Blender até haver movimento livre pelo cursor, restrição de eixo, entrada numérica, confirmação e cancelamento.
+- `Ctrl + ``: entrar/sair da navegação em primeira pessoa.
+- Primeira pessoa: mouse olha; `W/A/S/D` move; `Space` sobe; `Ctrl` desce; `Shift` acelera; `Esc` sai.
+- A navegação deve atuar somente no viewport ativo, nunca em previews offscreen, e liberar pointer lock/restaurar controles ao sair ou destruir o preview.
+
+## Precedência
+1. Preservar âncora e backups.
+2. Máximo de 8 branches.
+3. Somente o fork do usuário.
+4. Proteger `software-atual`.
+5. Foco em modelagem CPM.
+6. Testar e relatar resultados reais.
+Nenhuma conveniência justifica violar essas regras.
