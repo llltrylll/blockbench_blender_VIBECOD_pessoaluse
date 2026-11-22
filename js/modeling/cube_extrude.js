@@ -52,7 +52,7 @@ function updateExtrude(context, event) {
 	const amount = interval > 0 ? Math.round(raw_amount / interval) * interval : raw_amount;
 
 	restoreCubeStartState(context);
-	context.cube.resize(amount, context.axis, context.negative);
+	context.cube.resize(context.negative ? -amount : amount, context.axis, context.negative);
 	context.amount = amount;
 	updateCubeComponentOverlay(context.cube);
 	Blockbench.setCursorTooltip('Extrude: ' + (Math.round(amount * 100) / 100));
@@ -64,10 +64,10 @@ function finishExtrude(commit) {
 	active_extrude = null;
 
 	document.removeEventListener('mousemove', context.onMouseMove, true);
-	document.removeEventListener('pointerdown', context.onPointerDown, true);
+	context.preview.canvas.removeEventListener('pointerdown', context.onPointerDown, true);
 	document.removeEventListener('keydown', context.onKeyDown, true);
-	document.removeEventListener('wheel', context.onWheel, true);
-	document.removeEventListener('contextmenu', context.onContextMenu, true);
+	context.preview.canvas.removeEventListener('wheel', context.onWheel, true);
+	context.preview.canvas.removeEventListener('contextmenu', context.onContextMenu, true);
 
 	if (commit && Math.abs(context.amount) > 0.0001) {
 		Undo.finishEdit('Extrude Cube Face');
@@ -160,10 +160,8 @@ function startExtrude(event) {
 		if (active_extrude !== context) return;
 		pointer_event.preventDefault();
 		pointer_event.stopImmediatePropagation();
-		if (pointer_event.button === 0 && preview.canvas.contains(pointer_event.target)) {
+		if (pointer_event.button === 0) {
 			finishExtrude(true);
-		} else if (pointer_event.button === 2) {
-			finishExtrude(false);
 		}
 	};
 	context.onKeyDown = key_event => {
@@ -191,10 +189,10 @@ function startExtrude(event) {
 	active_extrude = context;
 	Undo.initEdit({elements: [cube]});
 	document.addEventListener('mousemove', context.onMouseMove, true);
-	document.addEventListener('pointerdown', context.onPointerDown, true);
+	preview.canvas.addEventListener('pointerdown', context.onPointerDown, true);
 	document.addEventListener('keydown', context.onKeyDown, true);
-	document.addEventListener('wheel', context.onWheel, {capture: true, passive: false});
-	document.addEventListener('contextmenu', context.onContextMenu, true);
+	preview.canvas.addEventListener('wheel', context.onWheel, {capture: true, passive: false});
+	preview.canvas.addEventListener('contextmenu', context.onContextMenu, true);
 	Blockbench.showQuickMessage('Extrude: move mouse along face normal · LMB/Enter confirm · RMB/Esc cancel', 4000);
 }
 
