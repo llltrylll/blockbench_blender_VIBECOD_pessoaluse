@@ -486,6 +486,51 @@ function makeCornerWorks(mesh, facePlans, edgeWorks, width) {
 
 	const corners = [];
 	for (const [vertexKey, profiles] of edgeProfilesByVertex.entries()) {
+		// One selected edge at a three-face corner uses Blender's vertex-
+		// deletion termination: the terminal face is trimmed and its new
+		// boundary follows the bevel profile. No overlapping cap is added.
+		if (profiles.length === 1) {
+			const profile = profiles[0];
+			const startPoint = profile[0];
+			const endPoint = profile[profile.length - 1];
+			let terminalFaceFound = false;
+			for (const plan of facePlans.values()) {
+				if (!plan.cornerCapPoints[vertexKey]) continue;
+				const polygon = plan.polygon;
+				const expanded = [];
+				let inserted = false;
+				for (let i = 0; i < polygon.length; i++) {
+					const current = polygon[i];
+					const next = polygon[(i + 1) % polygon.length];
+					expanded.push(current);
+					if (current.id === startPoint.id && next.id === endPoint.id) {
+						expanded.push(...profile.slice(1, -1));
+						inserted = true;
+					} else if (current.id === endPoint.id && next.id === startPoint.id) {
+						expanded.push(...profile.slice(1, -1).reverse());
+						inserted = true;
+					}
+				}
+				if (inserted) {
+					const planeOrigin = plan.info.positions[0];
+					const tolerance = Math.max(1e-4, width * 1e-3);
+					for (const point of profile) {
+						const distanceToPlane = Math.abs(dot(subtract(point.position, planeOrigin), plan.info.normal));
+						if (distanceToPlane > tolerance) {
+							throw new Error('O acabamento desta aresta exigiria uma face terminal não plana. Reduza a largura ou use segmentos 1.');
+						}
+					}
+					plan.polygon = cleanPolygon(expanded);
+					terminalFaceFound = true;
+					break;
+				}
+			}
+			// If there is no third face (open mesh boundary), leave the
+			// bevel profile open just as the source mesh boundary is open.
+			if (!terminalFaceFound) continue;
+			continue;
+		}
+
 		const incidentFaces = [];
 		const normalSum = [0, 0, 0];
 		for (const faceKey in mesh.faces) {
@@ -499,9 +544,6 @@ function makeCornerWorks(mesh, facePlans, edgeWorks, width) {
 						incidentFaces.push({face, point});
 					}
 				});
-				if (plan.cornerCapPoints[vertexKey]) {
-					incidentFaces.push({face, point: plan.cornerCapPoints[vertexKey]});
-				}
 			} else {
 				incidentFaces.push({
 					face,
