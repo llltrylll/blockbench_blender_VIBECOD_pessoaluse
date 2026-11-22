@@ -11,6 +11,7 @@ import { autoFixMeshEdit } from './mesh/auto_fix'
 import { sameMeshEdge } from './mesh/util';
 import { getSpatialInterval } from './transform';
 import { CUBE_EDGE_INDICES, sameCubeEdge } from './cube_selection';
+import { getCubeComponentSelection, clearCubeComponentSelection } from './cube_selection_data';
 
 export function uncorruptMesh() {
 	for (let mesh of Mesh.selected) {
@@ -164,32 +165,32 @@ SharedActions.add('select_all', {
 		let selection_mode = BarItems.selection_mode.value;
 		if (Cube.selected.length && Cube.selected.length === Outliner.selected.length) {
 			if (selection_mode == 'vertex') {
-				let unselect = Cube.selected[0].getSelectedVertices().length === 8;
+				let unselect = getCubeComponentSelection(Cube.selected[0]).vertices.length === 8;
 				Cube.selected.forEach(cube => {
-					cube.getSelectedVertices(true).replace(unselect ? [] : Array.from({length: 8}, (_, i) => String(i)));
-					cube.getSelectedEdges(true).empty();
-					cube.getSelectedFaces(true).empty();
+					const components = getCubeComponentSelection(cube, true);
+					components.vertices.replace(unselect ? [] : Array.from({length: 8}, (_, i) => String(i)));
+					components.edges.empty();
 					UVEditor.getSelectedFaces(cube, true).empty();
 				});
 			} else if (selection_mode == 'edge') {
-				let unselect = Cube.selected[0].getSelectedEdges().length === CUBE_EDGE_INDICES.length;
+				let unselect = getCubeComponentSelection(Cube.selected[0]).edges.length === CUBE_EDGE_INDICES.length;
 				Cube.selected.forEach(cube => {
-					cube.getSelectedVertices(true).empty();
-					cube.getSelectedEdges(true).replace(unselect ? [] : CUBE_EDGE_INDICES.map(edge => edge.slice()));
-					cube.getSelectedFaces(true).empty();
+					const components = getCubeComponentSelection(cube, true);
+					components.vertices.empty();
+					components.edges.replace(unselect ? [] : CUBE_EDGE_INDICES.map(edge => edge.slice()));
 					UVEditor.getSelectedFaces(cube, true).empty();
 					if (!unselect) {
-						cube.getSelectedVertices(true).replace(CUBE_EDGE_INDICES.flat().filter((key, i, arr) => arr.indexOf(key) === i));
+						components.vertices.replace(CUBE_EDGE_INDICES.flat().filter((key, i, arr) => arr.indexOf(key) === i));
 					}
 				});
 			} else {
-				let unselect = Cube.selected[0].getSelectedFaces().length === 6;
+				let unselect = UVEditor.getSelectedFaces(Cube.selected[0]).length === 6;
 				Cube.selected.forEach(cube => {
 					const face_keys = unselect ? [] : Object.keys(cube.faces);
-					cube.getSelectedFaces(true).replace(face_keys);
 					UVEditor.getSelectedFaces(cube, true).replace(face_keys);
-					cube.getSelectedVertices(true).empty();
-					cube.getSelectedEdges(true).empty();
+					const components = getCubeComponentSelection(cube, true);
+					components.vertices.empty();
+					components.edges.empty();
 				});
 			}
 			updateSelection();
@@ -250,7 +251,7 @@ SharedActions.add('unselect_all', {
 			delete Project.mesh_selection[mesh.uuid];
 		})
 		Cube.selected.forEach(cube => {
-			delete Project.mesh_selection[cube.uuid];
+			clearCubeComponentSelection(cube);
 			UVEditor.getSelectedFaces(cube, true).empty();
 		})
 		updateSelection();
@@ -266,26 +267,24 @@ SharedActions.add('invert_selection', {
 		let selection_mode = BarItems.selection_mode.value;
 		if (Cube.selected.length && Cube.selected.length === Outliner.selected.length) {
 			Cube.selected.forEach(cube => {
+				const components = getCubeComponentSelection(cube, true);
 				if (selection_mode == 'vertex') {
-					const selected = cube.getSelectedVertices();
-					cube.getSelectedVertices(true).replace(Array.from({length: 8}, (_, i) => String(i)).filter(key => !selected.includes(key)));
-					cube.getSelectedEdges(true).empty();
-					cube.getSelectedFaces(true).empty();
+					const selected = components.vertices.slice();
+					components.vertices.replace(Array.from({length: 8}, (_, i) => String(i)).filter(key => !selected.includes(key)));
+					components.edges.empty();
 					UVEditor.getSelectedFaces(cube, true).empty();
 				} else if (selection_mode == 'edge') {
-					const old_edges = cube.getSelectedEdges().slice();
+					const old_edges = components.edges.slice();
 					const edges = CUBE_EDGE_INDICES.filter(edge => !old_edges.find(edge2 => sameCubeEdge(edge2, edge)));
-					cube.getSelectedEdges(true).replace(edges.map(edge => edge.slice()));
-					cube.getSelectedVertices(true).replace(edges.flat().filter((key, i, arr) => arr.indexOf(key) === i));
-					cube.getSelectedFaces(true).empty();
+					components.edges.replace(edges.map(edge => edge.slice()));
+					components.vertices.replace(edges.flat().filter((key, i, arr) => arr.indexOf(key) === i));
 					UVEditor.getSelectedFaces(cube, true).empty();
 				} else {
-					const old_faces = cube.getSelectedFaces().slice();
+					const old_faces = UVEditor.getSelectedFaces(cube).slice();
 					const face_keys = Object.keys(cube.faces).filter(key => !old_faces.includes(key));
-					cube.getSelectedFaces(true).replace(face_keys);
 					UVEditor.getSelectedFaces(cube, true).replace(face_keys);
-					cube.getSelectedVertices(true).empty();
-					cube.getSelectedEdges(true).empty();
+					components.vertices.empty();
+					components.edges.empty();
 				}
 			});
 			updateSelection();
@@ -334,6 +333,7 @@ SharedActions.add('invert_selection', {
 		updateSelection();
 	}
 })
+
 BARS.defineActions(function() {
 	let previous_selection_mode = 'object';
 	new BarSelect('selection_mode', {
@@ -430,16 +430,16 @@ BARS.defineActions(function() {
 				})
 			}
 
-			// Native Cube component selection. Selection data stays temporary in Project.mesh_selection.
+			// Native Cube components use isolated transient state. Faces remain in UVEditor.
 			Cube.selected.forEach(cube => {
-				const vertices = cube.getSelectedVertices(true);
-				const edges = cube.getSelectedEdges(true);
-				const faces = cube.getSelectedFaces(true);
-				const uv_faces = UVEditor.getSelectedFaces(cube, true);
+				const components = getCubeComponentSelection(cube, true);
+				const vertices = components.vertices;
+				const edges = components.edges;
+				const faces = UVEditor.getSelectedFaces(cube, true);
 
 				if (value === 'object') {
-					delete Project.mesh_selection[cube.uuid];
-					uv_faces.empty();
+					clearCubeComponentSelection(cube);
+					faces.empty();
 					return;
 				}
 
@@ -449,9 +449,6 @@ BARS.defineActions(function() {
 							return cube.faces[fkey].getVertexIndices().every(index => vertices.includes(String(index)));
 						});
 						faces.replace(selected_faces);
-						uv_faces.replace(selected_faces);
-					} else {
-						faces.replace(uv_faces.slice());
 					}
 					vertices.empty();
 					edges.empty();
@@ -459,9 +456,7 @@ BARS.defineActions(function() {
 				}
 
 				if (value === 'edge') {
-					const previous_faces = previous_selection_mode === 'face'
-						? uv_faces.slice()
-						: [];
+					const previous_faces = previous_selection_mode === 'face' ? faces.slice() : [];
 					edges.empty();
 					if (previous_faces.length) {
 						previous_faces.forEach(fkey => {
@@ -478,20 +473,18 @@ BARS.defineActions(function() {
 						});
 					}
 					faces.empty();
-					uv_faces.empty();
 					return;
 				}
 
 				if (value === 'vertex') {
 					if (previous_selection_mode === 'face') {
 						vertices.empty();
-						uv_faces.forEach(fkey => {
+						faces.forEach(fkey => {
 							cube.faces[fkey]?.getVertexIndices().forEach(index => vertices.safePush(String(index)));
 						});
 					}
 					edges.empty();
 					faces.empty();
-					uv_faces.empty();
 				}
 			});
 			updateSelection();
