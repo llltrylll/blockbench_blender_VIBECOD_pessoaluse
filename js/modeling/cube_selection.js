@@ -1,4 +1,5 @@
 import { THREE } from '../lib/libs';
+import { getCubeComponentSelection } from './cube_selection_data';
 
 export const CUBE_EDGE_INDICES = [
 	[0, 1], [0, 2], [0, 5], [1, 3],
@@ -54,7 +55,7 @@ export function updateCubeComponentOverlay(cube) {
 	removeOverlay(cube);
 	if (!Project || !cube?.selected || !Modes.edit || !BarItems.selection_mode || BarItems.selection_mode.value === 'object') return;
 
-	const selection = Project.mesh_selection?.[cube.uuid];
+	const selection = getCubeComponentSelection(cube);
 	if (!selection) return;
 
 	const mode = BarItems.selection_mode.value;
@@ -122,7 +123,7 @@ export function updateCubeComponentOverlays() {
 
 	selected_cubes.forEach(cube => {
 		updateCubeComponentOverlay(cube);
-		const selection = Project.mesh_selection?.[cube.uuid];
+		const selection = getCubeComponentSelection(cube);
 		const mode = BarItems.selection_mode?.value;
 		if (Modes.edit && mode !== 'object' && selection && (
 			(mode === 'vertex' && selection.vertices?.length) ||
