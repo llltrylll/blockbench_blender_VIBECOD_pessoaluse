@@ -605,7 +605,7 @@ function runBevel(snapshots, amended, requestedWidth, requestedSegments) {
 		}, amended);
 		editStarted = true;
 
-		const targets = currentMeshes.map(entry => {
+		const targets = resolved.meshes.map(entry => {
 			entry.mesh.getSelectedEdges(true).replace(entry.snapshot.edges);
 			return {mesh: entry.mesh, edges: entry.snapshot.edges};
 		});
