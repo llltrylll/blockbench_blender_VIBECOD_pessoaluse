@@ -5,6 +5,9 @@ import { getCubeComponentSelection } from "../cube_selection_data";
 
 
 function getElementSnapVertices(element) {
+	if (element instanceof Group) {
+		return (element.children || []).flatMap(child => getElementSnapVertices(child));
+	}
 	if (element instanceof Cube) {
 		const selection = getCubeComponentSelection(element);
 		let indices = (selection.vertices || []).map(Number);
@@ -43,11 +46,19 @@ function getHitFaceSnapVertices(hit) {
 	return [];
 }
 
+function isElementInMovingSelection(element) {
+	while (element) {
+		if (Outliner.selected.includes(element)) return true;
+		element = element.parent;
+	}
+	return false;
+}
+
 function calculateVertexSnapOffset(module, event, axis) {
 	const axisIndex = {x: 0, y: 1, z: 2}[axis];
 	if (axisIndex === undefined || !Preview.selected) return undefined;
 	const hit = Preview.selected.raycast(event);
-	if (!hit?.element || Outliner.selected.includes(hit.element)) return undefined;
+	if (!hit?.element || isElementInMovingSelection(hit.element)) return undefined;
 
 	const targetHitPoint = hit.intersects?.[0]?.point;
 	const targetVertices = getHitFaceSnapVertices(hit);
@@ -63,7 +74,7 @@ function calculateVertexSnapOffset(module, event, axis) {
 	);
 
 	let axisVector = new THREE.Vector3(axisIndex === 0 ? 1 : 0, axisIndex === 1 ? 1 : 0, axisIndex === 2 ? 1 : 0);
-	if (getEditTransformSpace() === 2) {
+	if (getEditTransformSpace() >= 2) {
 		const reference = Transformer.rotation_ref?.getWorldQuaternion
 			? Transformer.rotation_ref
 			: Outliner.selected.find(element => element.mesh)?.mesh;
