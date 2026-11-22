@@ -19,6 +19,12 @@ export default class WalkNavigation {
 		this.previousControlsEnabled = true;
 		this.previousFov = null;
 		this.fovValue = 100;
+		try {
+			const savedFov = Number(localStorage.getItem('blockbench_viewport_fov'));
+			if (Number.isFinite(savedFov) && savedFov >= 30 && savedFov <= 140) {
+				this.fovValue = Math.round(savedFov);
+			}
+		} catch (error) {}
 		this.fovPanel = null;
 		this.lockButton = null;
 		this.temporarilyUnlocked = false;
@@ -40,6 +46,7 @@ export default class WalkNavigation {
 		document.addEventListener('keyup', this.onKeyUp, true);
 		document.addEventListener('pointerdown', this.onPointerDown, true);
 		window.addEventListener('blur', this.onWindowBlur);
+		this.createFovControl();
 	}
 
 	toggle() {
@@ -94,15 +101,13 @@ export default class WalkNavigation {
 		this.cancelOnExit = false;
 		this.suppressNextContextMenu = false;
 		this.previousControlsEnabled = this.controls.enabled;
-		this.previousFov = camera.fov;
 		this.savedPose = {
 			position: camera.position.clone(),
 			quaternion: camera.quaternion.clone(),
 			rotationOrder: camera.rotation.order,
 			target: this.controls.target.clone()
 		};
-		camera.fov = this.fovValue;
-		camera.updateProjectionMatrix();
+		this.applyFov?.(this.fovValue);
 		this.controls.enabled = false;
 		this.keys.clear();
 
@@ -120,12 +125,13 @@ export default class WalkNavigation {
 		if (!parent) return;
 		if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
 
+		if (this.fovPanel?.isConnected) return;
 		const panel = document.createElement('div');
 		panel.className = 'walk_navigation_fov';
 		Object.assign(panel.style, {
 			position: 'absolute',
 			top: '12px',
-			right: '12px',
+			left: '12px',
 			zIndex: '10000',
 			display: 'flex',
 			alignItems: 'center',
@@ -177,6 +183,7 @@ export default class WalkNavigation {
 			cursor: 'pointer'
 		});
 		lockButton.addEventListener('click', () => this.resumePointerLock());
+		panel.addEventListener('pointerdown', event => event.stopPropagation());
 
 		const applyFov = value => {
 			const parsed = Number(value);
@@ -184,11 +191,15 @@ export default class WalkNavigation {
 			this.fovValue = Math.max(30, Math.min(140, Math.round(parsed)));
 			number.value = String(this.fovValue);
 			slider.value = String(this.fovValue);
-			const camera = this.controls.object;
-			if (this.active && camera?.isPerspectiveCamera) {
+			const preview = this.canvas.preview;
+			const camera = preview?.camPers || this.controls.object;
+			if (camera?.isPerspectiveCamera) {
 				camera.fov = this.fovValue;
 				camera.updateProjectionMatrix();
 			}
+			try {
+				localStorage.setItem('blockbench_viewport_fov', String(this.fovValue));
+			} catch (error) {}
 		};
 		number.addEventListener('change', () => applyFov(number.value));
 		number.addEventListener('keydown', event => {
@@ -203,11 +214,12 @@ export default class WalkNavigation {
 		this.fovPanel = panel;
 		this.lockButton = lockButton;
 		this.applyFov = applyFov;
+		this.applyFov(this.fovValue);
 		this.updateFovControlState();
 	}
 
 	updateFovControlState() {
-		if (this.lockButton) this.lockButton.style.display = this.temporarilyUnlocked ? '' : 'none';
+		if (this.lockButton) this.lockButton.style.display = this.active && this.temporarilyUnlocked ? '' : 'none';
 	}
 
 	resumePointerLock() {
@@ -265,17 +277,10 @@ export default class WalkNavigation {
 				const direction = camera.getWorldDirection(new THREE.Vector3()).normalize();
 				this.controls.target.copy(camera.position).addScaledVector(direction, 10);
 			}
-			if (this.previousFov !== null) {
-				camera.fov = this.previousFov;
-				camera.updateProjectionMatrix();
-			}
 			this.controls.update();
 		}
-		if (this.fovPanel) this.fovPanel.remove();
-		this.fovPanel = null;
-		this.lockButton = null;
 		this.temporarilyUnlocked = false;
-		this.applyFov = null;
+		this.updateFovControlState();
 		this.previousFov = null;
 		this.savedPose = null;
 		this.cancelOnExit = false;
