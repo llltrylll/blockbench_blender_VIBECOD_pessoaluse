@@ -203,12 +203,14 @@ function tryBuildRectangularRegion(faces, tolerance) {
 		if (dot(face.planeNormal, base.planeNormal) < Math.cos(Math.degToRad(3))) return null;
 		const expectedFaceNormal = normalize(cross(face.axisU, multiply(face.axisV, -1)));
 		if (dot(face.planeNormal, expectedFaceNormal) < Math.cos(Math.degToRad(3))) return null;
+		const projected = [];
 		for (let i = 0; i < face.positions.length; i++) {
 			const point = face.positions[i];
 			if (Math.abs(dot(subtract(point, origin), base.planeNormal)) > planeTolerance) return null;
 			const relative = subtract(point, origin);
 			const x = dot(relative, axisU);
 			const y = dot(relative, axisV);
+			projected.push([x, y]);
 			minU = Math.min(minU, x);
 			maxU = Math.max(maxU, x);
 			minV = Math.min(minV, y);
@@ -456,7 +458,7 @@ function prepareMesh(mesh, options) {
 		else skipped++;
 	}
 	if (!descriptors.length) {
-		return {mesh, regions: [], skipped, sourceFaces: Object.keys(mesh.faces).length};
+		return {mesh, regions: [], skipped, sourceFaces: Object.values(mesh.faces).filter(face => face.vertices.length >= 3).length};
 	}
 	const regions = buildMinimalRegions(descriptors, options.mergeCoplanar, options.tolerance);
 	const convertedFaces = regions.reduce((sum, region) => sum + region.faceCount, 0);
