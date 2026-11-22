@@ -876,6 +876,12 @@ UndoSystem.selectionSave = class {
 					edges: element.getSelectedEdges().map(edge => edge.slice()),
 					vertices: element.getSelectedVertices().slice(),
 				}
+			} else if (element instanceof Cube) {
+				this.geometry[element.uuid] = {
+					faces: element.getSelectedFaces().slice(),
+					edges: element.getSelectedEdges().map(edge => edge.slice()),
+					vertices: element.getSelectedVertices().slice(),
+				}
 			} else if (element instanceof SplineMesh) {
 				this.geometry[element.uuid] = {
 					vertices: element.getSelectedVertices().slice(),
@@ -948,6 +954,11 @@ UndoSystem.selectionSave = class {
 					element.getSelectedFaces(true).replace(geo_data.faces);
 					element.getSelectedEdges(true).replace(geo_data.edges);
 					element.getSelectedVertices(true).replace(geo_data.vertices);
+
+				} else if (element instanceof Cube) {
+					element.getSelectedFaces(true).replace(geo_data.faces || []);
+					element.getSelectedEdges(true).replace((geo_data.edges || []).map(edge => edge.slice()));
+					element.getSelectedVertices(true).replace(geo_data.vertices || []);
 
 				} else if (element instanceof SplineMesh) {
 					element.getSelectedVertices(true).replace(geo_data.vertices);
