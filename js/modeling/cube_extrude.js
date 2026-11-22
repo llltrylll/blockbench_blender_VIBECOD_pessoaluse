@@ -72,7 +72,7 @@ function finishExtrude(commit) {
 	if (commit && Math.abs(context.amount) > 0.0001) {
 		Undo.finishEdit('Extrude Cube Face');
 	} else {
-		Undo.cancelEdit(!commit);
+		Undo.cancelEdit(!commit || Math.abs(context.amount) <= 0.0001);
 	}
 
 	clearTemporaryResizeData(context);
@@ -162,6 +162,8 @@ function startExtrude(event) {
 		pointer_event.stopImmediatePropagation();
 		if (pointer_event.button === 0) {
 			finishExtrude(true);
+		} else if (pointer_event.button === 2) {
+			finishExtrude(false);
 		}
 	};
 	context.onKeyDown = key_event => {
