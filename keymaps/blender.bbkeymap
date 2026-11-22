@@ -507,15 +507,6 @@
 		"import_optifine_part": null,
 		"toggle_skin_layer": null,
 		"export_minecraft_skin": null,
-		"explode_skin_model": null,
-		"cube_selection_vertex": {
-			"key": 49
-		},
-		"cube_selection_edge": {
-			"key": 50
-		},
-		"cube_selection_face": {
-			"key": 51
-		}
+		"explode_skin_model": null
 	}
 }
