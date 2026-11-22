@@ -392,7 +392,11 @@ function makeCornerWorks(mesh, facePlans, edgeWorks) {
 		incidentFaces.forEach(entry => pointsById.set(entry.point.id, entry.point));
 		profiles.forEach(profile => profile.forEach(point => pointsById.set(point.id, point)));
 		const boundary = Array.from(pointsById.values());
+		// When two selected edges meet, their bevel strips can share one
+		// boundary edge directly; that corner does not need an extra cap.
+		// Open surface boundaries are also intentionally left open.
 		if (boundary.length < 3) {
+			if (boundary.length >= 2) continue;
 			throw new Error('Não foi possível fechar o canto de uma aresta bevelada.');
 		}
 
