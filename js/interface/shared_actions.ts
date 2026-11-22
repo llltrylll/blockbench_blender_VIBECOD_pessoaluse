@@ -174,7 +174,7 @@ BARS.defineActions(() => {
 	new Action('delete', {
 		icon: 'delete',
 		category: 'edit',
-		keybind: new Keybind({key: 46}, {
+		keybind: new Keybind({key: 'x'}, {
 			keep_vertices: 'alt'
 		}),
 		variations: {
