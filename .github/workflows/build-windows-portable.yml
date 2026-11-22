@@ -24,8 +24,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build portable Windows executable
-        run: npm run build-test-portable
+      - name: Build portable Windows executable without publisher certificate
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm run build-electron
+          npx electron-builder --windows portable --publish=never --config.win.signAndEditExecutable=false
 
       - name: Package executable in RAR
         shell: pwsh
