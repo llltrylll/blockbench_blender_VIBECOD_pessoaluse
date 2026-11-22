@@ -282,7 +282,7 @@ function makeFacePlans(analysis, width, factory) {
 		}
 		polygon = cleanPolygon(polygon);
 		if (polygon.length < 3) throw new Error('O bevel produziria uma face degenerada.');
-		plans.set(faceKey, {faceKey, face, info, polygon, cornerPoints: {}});
+		plans.set(faceKey, {faceKey, face, info, polygon, cornerPoints: {}, cornerCapPoints: {}});
 	}
 
 	// A cut that reaches a shared original edge must also be inserted into
@@ -322,7 +322,7 @@ function makeFacePlans(analysis, width, factory) {
 			if (!plan) {
 				const info = validateFace(mesh, adjacent.face, adjacent.faceKey);
 				const polygon = info.vertices.map(key => makeOriginalPoint(key, mesh.vertices[key], adjacent.face.uv[key], factory));
-				plan = {faceKey: adjacent.faceKey, face: adjacent.face, info, polygon, cornerPoints: {}};
+				plan = {faceKey: adjacent.faceKey, face: adjacent.face, info, polygon, cornerPoints: {}, cornerCapPoints: {}};
 				plans.set(adjacent.faceKey, plan);
 			}
 
@@ -353,6 +353,35 @@ function makeFacePlans(analysis, width, factory) {
 				}
 			}
 			plan.polygon = cleanPolygon(expanded);
+		}
+	}
+
+	// If two clipped boundary edges meet at an otherwise untouched corner,
+	// remove the original corner from the neighboring face. It becomes part
+	// of the small corner patch instead of overlapping the bevel end cap.
+	for (const plan of plans.values()) {
+		for (let i = 0; i < plan.info.vertices.length; i++) {
+			const vertexKey = plan.info.vertices[i];
+			const previousKey = plan.info.vertices[(i + plan.info.vertices.length - 1) % plan.info.vertices.length];
+			const nextKey = plan.info.vertices[(i + 1) % plan.info.vertices.length];
+			const vertex = mesh.vertices[vertexKey];
+			const radius = width * 1.75 + EPSILON;
+			const previousCuts = edgeCuts.get(edgeId(previousKey, vertexKey));
+			const nextCuts = edgeCuts.get(edgeId(vertexKey, nextKey));
+			const previousHit = previousCuts && Array.from(previousCuts.points.values()).some(cut =>
+				distanceSquared(cut.point.position, vertex) <= radius * radius
+			);
+			const nextHit = nextCuts && Array.from(nextCuts.points.values()).some(cut =>
+				distanceSquared(cut.point.position, vertex) <= radius * radius
+			);
+			if (!previousHit || !nextHit) continue;
+
+			const originalIndex = plan.polygon.findIndex(point => point.originalKey === vertexKey);
+			if (originalIndex !== -1) {
+				const [originalPoint] = plan.polygon.splice(originalIndex, 1);
+				plan.cornerCapPoints[vertexKey] = originalPoint;
+				plan.polygon = cleanPolygon(plan.polygon);
+			}
 		}
 	}
 
@@ -446,7 +475,7 @@ function makeEdgeWorks(analysis, facePlans, segments, factory) {
 	}
 	return works;
 }
-function makeCornerWorks(mesh, facePlans, edgeWorks) {
+function makeCornerWorks(mesh, facePlans, edgeWorks, width) {
 	const edgeProfilesByVertex = new Map();
 	edgeWorks.forEach(work => {
 		[[work.edge.v0, work.profile0], [work.edge.v1, work.profile1]].forEach(([vertexKey, profile]) => {
@@ -470,6 +499,9 @@ function makeCornerWorks(mesh, facePlans, edgeWorks) {
 						incidentFaces.push({face, point});
 					}
 				});
+				if (plan.cornerCapPoints[vertexKey]) {
+					incidentFaces.push({face, point: plan.cornerCapPoints[vertexKey]});
+				}
 			} else {
 				incidentFaces.push({
 					face,
@@ -543,7 +575,7 @@ function faceNormalFromPoints(points) {
 function makeMeshPlan(mesh, analysis, width, segments, factory) {
 	const facePlans = makeFacePlans(analysis, width, factory);
 	const edgeWorks = makeEdgeWorks(analysis, facePlans, segments, factory);
-	const corners = makeCornerWorks(mesh, facePlans, edgeWorks);
+	const corners = makeCornerWorks(mesh, facePlans, edgeWorks, width);
 	return {
 		mesh,
 		analysis,
