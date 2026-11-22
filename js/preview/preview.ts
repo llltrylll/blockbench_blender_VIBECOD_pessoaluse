@@ -341,7 +341,7 @@ export class Preview {
 		this.offscreen = !!options.offscreen;
 		this.isOrtho = false;
 		this.angle = null;
-		this.camPers = new THREE.PerspectiveCamera(settings.fov.value as number, 16 / 9, settings.camera_near_plane.value as number||1, 30000);
+		this.camPers = new THREE.PerspectiveCamera(120, 16 / 9, settings.camera_near_plane.value as number||1, 30000);
 		// @ts-expect-error
 		this.camOrtho = new THREE.OrthographicCamera(-8000, 8000, -8000, 8000, -8000, 12_000);
 		this.camOrtho.backgroundHandle = [{n: false, a: 'x'}, {n: false, a: 'y'}]
@@ -794,7 +794,7 @@ export class Preview {
 		return this;
 	}
 	setFOV(fov: number): void {
-		this.camPers.fov = fov;
+		this.camPers.fov = 120;
 		this.camPers.updateProjectionMatrix();
 	}
 	setNormalCamera() {
