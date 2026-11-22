@@ -1,4 +1,5 @@
 import { markerColors } from "../../marker_colors";
+import { SceneCursor } from '../../preview/scene_cursor';
 
 const SHAPE_OPTIONS = {
 	cuboid: 'dialog.add_primitive.shape.cube',
@@ -47,6 +48,7 @@ BARS.defineActions(function() {
 			let iteration = 0;
 			const color = Math.floor(Math.random()*markerColors.length);
 			let parent = getCurrentGroup() ?? Armature.selected[0];
+			const cursor_position = SceneCursor.getLocalPosition(parent);
 
 			function runEdit(amended: boolean, result: AddMeshFormResult) {
 				let elements = [];
@@ -68,6 +70,7 @@ BARS.defineActions(function() {
 						mesh.color = parent.color;
 					}
 				}
+				mesh.moveVector(cursor_position, null, false);
 				let diameter_factor = result.align_edges ? 1 / Math.cos(Math.PI/result.sides) : 1;
 				let off_ang = result.align_edges ? 0.5 : 0;
 
@@ -406,12 +409,9 @@ BARS.defineActions(function() {
 					UVEditor.loadData()
 				}
 				if (Format.bone_rig) {
-					if (parent && parent.origin) {
-						var pos1 = parent.origin.slice()
-						mesh.extend({
-							origin: pos1.slice() as ArrayVector3
-						})
-					}
+					mesh.extend({
+						origin: cursor_position.slice() as ArrayVector3
+					});
 				}
 
 				elements.push(mesh);
