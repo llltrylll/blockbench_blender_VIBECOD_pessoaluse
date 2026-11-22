@@ -47,12 +47,12 @@ SharedActions.add('delete', {
 	priority: 10,
 	condition: () => Modes.edit && (
 		(Mesh.selected[0] && Prop.active_panel == 'preview' && Project.mesh_selection[Mesh.selected[0].uuid]) ||
-		(Cube.selected.length && BarItems.selection_mode.value === 'face' &&
+		(Cube.selected.length && ['face', 'cluster'].includes(BarItems.selection_mode.value) &&
 			Cube.selected.some(cube => getCubeComponentSelection(cube).faces.length))
 	),
 	run() {
 		if (Cube.selected.length &&
-			BarItems.selection_mode.value === 'face' &&
+			['face', 'cluster'].includes(BarItems.selection_mode.value) &&
 			Cube.selected.some(cube => getCubeComponentSelection(cube).faces.length)) {
 			const cubes = Cube.selected.slice();
 			Undo.initEdit({elements: cubes, selection: true});
