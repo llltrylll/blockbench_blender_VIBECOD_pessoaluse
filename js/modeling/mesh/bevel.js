@@ -1,6 +1,5 @@
 import { THREE } from '../../lib/libs';
 import { MeshFace } from '../../outliner/types/mesh';
-import { CUBE_EDGE_INDICES } from '../cube_selection';
 import { getCubeComponentSelection } from '../cube_selection_data';
 import { convertCubeToMesh } from './cube_to_mesh';
 
@@ -191,6 +190,7 @@ function analyzeMesh(mesh, requestedEdges) {
 	const adjacency = new Map();
 	for (const faceKey in mesh.faces) {
 		const face = mesh.faces[faceKey];
+		if (face.vertices.length < 3) continue;
 		const vertices = face.vertices.length === 4 ? face.getSortedVertices() : face.vertices;
 		if (!vertices || vertices.length < 2) continue;
 		for (let i = 0; i < vertices.length; i++) {
@@ -485,7 +485,7 @@ function createGeneratedFace(mesh, points, texture, uvSource, expectedNormal, ke
 	mesh.addFaces(face);
 	return face;
 }
-function applyMeshPlan(plan, width) {
+function applyMeshPlan(plan) {
 	const {mesh, facePlans, edgeWorks, corners} = plan;
 	const keyMap = new Map();
 	const pointMap = new Map();
@@ -641,7 +641,7 @@ function runBevel(snapshots, amended, requestedWidth, requestedSegments) {
 			plans.push(makeMeshPlan(targets[i].mesh, analyses[i], width, segments, factory));
 		}
 
-		plans.forEach(plan => applyMeshPlan(plan, width));
+		plans.forEach(plan => applyMeshPlan(plan));
 		const affectedMeshes = targets.map(target => target.mesh);
 		Undo.finishEdit('Bevel Edges', {
 			elements: affectedMeshes,
