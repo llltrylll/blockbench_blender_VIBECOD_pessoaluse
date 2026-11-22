@@ -71,3 +71,10 @@ Prioridade: modelagem CPM estável e produtiva. Não iniciar melhorias em outras
 5. Foco em modelagem CPM.
 6. Testar e relatar resultados reais.
 Nenhuma conveniência justifica violar essas regras.
+
+## Regra de builds e distribuição
+
+- Nunca iniciar, compilar, empacotar ou entregar uma build por iniciativa própria. Só gerar uma build quando o usuário solicitar explicitamente.
+- Quando solicitada, a distribuição deve ser exclusivamente **Windows portátil**, sem instalador e sem builds para Linux/macOS.
+- O arquivo final solicitado deve ser `.rar`.
+- Não disparar workflows de publicação, releases, upload de binários ou builds automáticas sem ordem explícita do usuário.
