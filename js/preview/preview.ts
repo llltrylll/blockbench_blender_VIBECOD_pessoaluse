@@ -1723,6 +1723,12 @@ export class Preview {
 		}
 	}
 	mouseup(event: MouseEvent) {
+		if (this.walkNavigation?.suppressNextContextMenu) {
+			this.walkNavigation.suppressNextContextMenu = false;
+			this.static_rclick = false;
+			delete this.selection.click_target;
+			return this;
+		}
 		if (event.button === 2 && Transformer.dragging) {
 			this.static_rclick = false;
 			event.preventDefault();
