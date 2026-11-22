@@ -1228,14 +1228,7 @@ import { TransformerModule } from "./transform_modules";
 				}
 			}
 			this.cancelMovement = function(event, keep_changes = false) {
-				onPointerUp(event, keep_changes);
-				let module = TransformerModule.active;
-				if (module) {
-					module.dispatchCancel({
-						event,
-						keep_changes
-					});
-				}
+				onPointerUp(event || {button: 2}, keep_changes);
 			}
 			function extendTransformLineOnAxis(long, axis) {
 				let axisNumber = getAxisNumber(axis);
@@ -1433,6 +1426,7 @@ import { TransformerModule } from "./transform_modules";
 				scope.dispatchEvent( objectChangeEvent );
 			}
 			function onPointerUp( event, keep_changes = true ) {
+				event ||= {};
 				//event.preventDefault(); // Prevent MouseEvent on mobile
 				document.removeEventListener( "mouseup", onPointerUp );
 				PointerTarget.endTarget();
@@ -1461,14 +1455,16 @@ import { TransformerModule } from "./transform_modules";
 
 					Blockbench.setCursorTooltip();
 					let module = TransformerModule.active;
+					const commit = keep_changes && event.button !== 2;
 					if (module) {
-						module.dispatchEnd({
-							event,
-							keep_changes
-						});
+						if (commit) {
+							module.dispatchEnd({event, keep_changes: true});
+						} else {
+							module.dispatchCancel({event, keep_changes: false});
+						}
 					}
 
-					if (module?.has_changed && Blockbench.startup_count <= 1 && !Blockbench.hasFlag('size_modifier_message')) {
+					if (commit && module?.has_changed && Blockbench.startup_count <= 1 && !Blockbench.hasFlag('size_modifier_message')) {
 						Blockbench.addFlag('size_modifier_message');
 						setTimeout(() => {
 							Blockbench.showToastNotification({
