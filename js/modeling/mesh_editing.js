@@ -3,6 +3,7 @@ import { ProportionalEdit } from './mesh/proportional_edit';
 import './mesh/set_vertex_weights'
 import './mesh/loop_cut'
 import './mesh/knife_tool'
+import './cube_extrude';
 import './mesh/add_mesh'
 import './mesh/seam_tool'
 import './mesh/merge_split'
