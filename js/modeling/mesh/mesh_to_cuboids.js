@@ -196,20 +196,19 @@ function tryBuildRectangularRegion(faces, tolerance) {
 	const origin = base.uv00Position;
 	const planeTolerance = base.scale * Math.max(1e-5, tolerance * 1.5);
 	let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
-	const projectedFaces = [];
 	let totalArea = 0;
 
 	for (const face of faces) {
 		if (face.texture !== base.texture) return null;
 		if (dot(face.planeNormal, base.planeNormal) < Math.cos(Math.degToRad(3))) return null;
-		const projected = [];
+		const expectedFaceNormal = normalize(cross(face.axisU, multiply(face.axisV, -1)));
+		if (dot(face.planeNormal, expectedFaceNormal) < Math.cos(Math.degToRad(3))) return null;
 		for (let i = 0; i < face.positions.length; i++) {
 			const point = face.positions[i];
 			if (Math.abs(dot(subtract(point, origin), base.planeNormal)) > planeTolerance) return null;
 			const relative = subtract(point, origin);
 			const x = dot(relative, axisU);
 			const y = dot(relative, axisV);
-			projected.push([x, y]);
 			minU = Math.min(minU, x);
 			maxU = Math.max(maxU, x);
 			minV = Math.min(minV, y);
@@ -225,7 +224,6 @@ function tryBuildRectangularRegion(faces, tolerance) {
 			if (Math.abs(actualUV[0] - expectedU) > uvTolerance ||
 				Math.abs(actualUV[1] - expectedV) > uvTolerance) return null;
 		}
-		projectedFaces.push({face, projected});
 		totalArea += polygonArea2D(projected);
 	}
 
@@ -396,11 +394,12 @@ function buildMinimalRegions(descriptors, mergeCoplanar, tolerance) {
 	return regions;
 }
 function makeCubeData(mesh, region, index) {
-	const southNormal = normalize(cross(region.axisU, multiply(region.axisV, -1)));
-	const isSouth = dot(region.normal, southNormal) >= 0;
-	const basisX = isSouth ? region.axisU : multiply(region.axisU, -1);
+	const basisX = region.axisU;
 	const basisY = multiply(region.axisV, -1);
 	const basisZ = normalize(cross(basisX, basisY));
+	if (dot(region.normal, basisZ) < Math.cos(Math.degToRad(3))) {
+		throw new Error('A orientação UV desta face não é compatível com uma face nativa do CPM.');
+	}
 	const matrix = new THREE.Matrix4().makeBasis(
 		new THREE.Vector3(...basisX),
 		new THREE.Vector3(...basisY),
@@ -427,14 +426,15 @@ function makeCubeData(mesh, region, index) {
 		export: mesh.export,
 		visibility: true,
 	});
+	cube.box_uv = false;
 	for (const direction of FACE_DIRECTIONS) {
 		const face = cube.faces[direction];
 		face.texture = null;
 		face.enabled = false;
-		face.uv = [];
+		face.uv = [0, 0, 0, 0];
 		face.rotation = 0;
 	}
-	const activeFace = cube.faces[isSouth ? 'south' : 'north'];
+	const activeFace = cube.faces.south;
 	activeFace.texture = region.texture || false;
 	activeFace.enabled = true;
 	activeFace.uv = region.uvRect.slice();
@@ -459,11 +459,13 @@ function prepareMesh(mesh, options) {
 		return {mesh, regions: [], skipped, sourceFaces: Object.keys(mesh.faces).length};
 	}
 	const regions = buildMinimalRegions(descriptors, options.mergeCoplanar, options.tolerance);
+	const convertedFaces = regions.reduce((sum, region) => sum + region.faceCount, 0);
+	skipped += Math.max(0, descriptors.length - convertedFaces);
 	return {
 		mesh,
 		regions,
 		skipped,
-		sourceFaces: Object.keys(mesh.faces).length,
+		sourceFaces: Object.values(mesh.faces).filter(face => face.vertices.length >= 3).length,
 	};
 }
 function convertMeshes(prepared, keepBackup) {
