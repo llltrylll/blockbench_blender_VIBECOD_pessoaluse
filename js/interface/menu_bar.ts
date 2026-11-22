@@ -354,6 +354,7 @@ export const MenuBar = {
 		})
 		new BarMenu('mesh', [
 			new MenuSeparator('geometry'),
+			'mesh_to_cuboids',
 			'extrude_mesh_selection',
 			'inset_mesh_selection',
 			'loop_cut',
