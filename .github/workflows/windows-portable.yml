@@ -1,0 +1,77 @@
+name: Windows portable test build
+
+on:
+  push:
+    branches:
+      - teste-1
+    paths:
+      - '.github/workflows/windows-portable.yml'
+      - 'assets/**'
+      - 'build/**'
+      - 'css/**'
+      - 'dist/**'
+      - 'electron/**'
+      - 'font/**'
+      - 'js/**'
+      - 'keymaps/**'
+      - 'lang/**'
+      - 'lib/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/**'
+      - 'themes/**'
+      - 'index.html'
+
+jobs:
+  build-windows-portable:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout teste-1
+        uses: actions/checkout@v5
+        with:
+          ref: teste-1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build portable Windows executable
+        run: npm run build-test-portable
+
+      - name: Install WinRAR
+        shell: pwsh
+        run: |
+          winget install --id RARLab.WinRAR --exact --silent --accept-package-agreements --accept-source-agreements
+          $rar = @(
+            "$env:ProgramFiles\WinRAR\Rar.exe",
+            "${env:ProgramFiles(x86)}\WinRAR\Rar.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $rar) {
+            throw "Rar.exe not found after WinRAR installation."
+          }
+          $exe = Get-ChildItem -Path "dist-electron" -Filter "*.exe" -File |
+            Where-Object { $_.Name -match "x64" } |
+            Select-Object -First 1
+          if (-not $exe) {
+            throw "Portable x64 executable not found in dist-electron."
+          }
+          & $rar a -m5 -ep1 "Blockbench-Windows-portable.rar" $exe.FullName
+          if ($LASTEXITCODE -ne 0) {
+            throw "RAR compression failed with exit code $LASTEXITCODE."
+          }
+          Get-Item "Blockbench-Windows-portable.rar" | Format-List Name,Length
+
+      - name: Upload RAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blockbench-Windows-portable-RAR
+          path: Blockbench-Windows-portable.rar
+          if-no-files-found: error
+          retention-days: 3
