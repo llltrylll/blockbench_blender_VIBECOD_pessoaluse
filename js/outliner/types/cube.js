@@ -1620,6 +1620,7 @@ BARS.defineActions(function() {
 		id: 'add_cube',
 		icon: 'add_box',
 		category: 'edit',
+		keybind: new Keybind({key: 'a', shift: true}),
 		condition: () => Modes.edit,
 		click: function () {
 			Undo.initEdit({outliner: true, elements: [], selection: true});
