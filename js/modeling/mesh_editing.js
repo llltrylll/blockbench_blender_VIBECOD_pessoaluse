@@ -44,8 +44,30 @@ export function uncorruptMesh() {
 }
 
 SharedActions.add('delete', {
-	condition: () => Modes.edit && Prop.active_panel == 'preview' && Mesh.selected[0] && Project.mesh_selection[Mesh.selected[0].uuid],
+	condition: () => Modes.edit && Prop.active_panel == 'preview' && (
+		(Mesh.selected[0] && Project.mesh_selection[Mesh.selected[0].uuid]) ||
+		(Cube.selected.length && Cube.selected.length === Outliner.selected.length &&
+			BarItems.selection_mode.value === 'face' &&
+			Cube.selected.some(cube => getCubeComponentSelection(cube).faces.length))
+	),
 	run() {
+		if (Cube.selected.length && Cube.selected.length === Outliner.selected.length &&
+			BarItems.selection_mode.value === 'face' &&
+			Cube.selected.some(cube => getCubeComponentSelection(cube).faces.length)) {
+			const cubes = Cube.selected.slice();
+			Undo.initEdit({elements: cubes, selection: true});
+			cubes.forEach(cube => {
+				const selected_faces = getCubeComponentSelection(cube).faces.slice();
+				selected_faces.forEach(face_key => {
+					if (cube.faces[face_key]) cube.faces[face_key].enabled = false;
+				});
+				clearCubeComponentSelection(cube);
+			});
+			Undo.finishEdit('Delete Cube Face');
+			Canvas.updateView({elements: cubes, element_aspects: {geometry: true, faces: true}, selection: true});
+			updateSelection();
+			return;
+		}
 		let meshes = Mesh.selected.slice();
 		let keep_vertices = BarItems.delete.keybind.additionalModifierTriggered(event, 'keep_vertices');
 		Undo.initEdit({elements: meshes, outliner: true, selection: true})
@@ -332,24 +354,37 @@ SharedActions.add('invert_selection', {
 	}
 })
 
+// Capture Blender-style 1/2/3 before Blockbench's global shortcuts (page/tool popups).
+document.addEventListener('keydown', event => {
+	if (!Modes.edit || Prop.active_panel !== 'preview' || event.ctrlKey || event.altKey || event.metaKey) return;
+	const target = event.target;
+	if (target && (target.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(target.tagName))) return;
+	const modes = {'Digit1': 'vertex', 'Numpad1': 'vertex', 'Digit2': 'edge', 'Numpad2': 'edge', 'Digit3': 'face', 'Numpad3': 'face'};
+	const mode = modes[event.code];
+	if (!mode || !(Mesh.selected.length || Cube.selected.length)) return;
+	event.preventDefault();
+	event.stopImmediatePropagation();
+	BarItems.selection_mode.change(mode);
+}, true);
+
 BARS.defineActions(function() {
 	// Blender-style component selection: 1 vertex, 2 edge, 3 face.
 	// Keep these as separate actions so number keys don't activate Blockbench pages.
 	new Action('cube_selection_vertex', {
 		category: 'edit',
-		keybind: new Keybind({key: 49}),
+		keybind: null,
 		condition: () => Modes.edit && (Mesh.selected.length || Cube.selected.length),
 		click() { BarItems.selection_mode.change('vertex'); }
 	});
 	new Action('cube_selection_edge', {
 		category: 'edit',
-		keybind: new Keybind({key: 50}),
+		keybind: null,
 		condition: () => Modes.edit && (Mesh.selected.length || Cube.selected.length),
 		click() { BarItems.selection_mode.change('edge'); }
 	});
 	new Action('cube_selection_face', {
 		category: 'edit',
-		keybind: new Keybind({key: 51}),
+		keybind: null,
 		condition: () => Modes.edit && (Mesh.selected.length || Cube.selected.length),
 		click() { BarItems.selection_mode.change('face'); }
 	});
