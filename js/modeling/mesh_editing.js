@@ -12,7 +12,7 @@ import { sameMeshEdge } from './mesh/util';
 import { getSpatialInterval } from './transform';
 import { CUBE_EDGE_INDICES, sameCubeEdge } from './cube_selection';
 import { getCubeComponentSelection, clearCubeComponentSelection } from './cube_selection_data';
-import './cube_extrude';
+import { startCubeExtrude } from './cube_extrude';
 
 export function uncorruptMesh() {
 	for (let mesh of Mesh.selected) {
@@ -832,16 +832,28 @@ BARS.defineActions(function() {
 		}
 	})
 	new Action('extrude_mesh_selection', {
+		name: 'Extrude Selection',
 		icon: 'upload',
 		category: 'edit',
-		keybind: new Keybind({key: 'e', shift: true}),
+		keybind: new Keybind({key: 'e'}),
 		condition: {
 			modes: ['edit'],
-			features: ['meshes'],
-			selected: {mesh: true, spline: false, armature_bone: false},
-			method: () => (Mesh.selected[0] && Mesh.selected[0].getSelectedVertices().length)
+			method: () => {
+				const mode = BarItems.selection_mode.value;
+				const has_mesh_selection = Mesh.selected.length > 0 && Cube.selected.length === 0
+					&& Mesh.selected.some(mesh => mesh.getSelectedVertices().length > 0);
+				const cube = Cube.selected[0];
+				const cube_selection = cube ? getCubeComponentSelection(cube) : null;
+				const has_cube_selection = Cube.selected.length === 1 && Mesh.selected.length === 0
+					&& Outliner.selected.length === 1 && (
+						((mode === 'face' || mode === 'cluster') && cube_selection.faces.length === 1)
+						|| (mode === 'edge' && cube_selection.edges.length === 1)
+					);
+				return has_mesh_selection || has_cube_selection;
+			}
 		},
-		click() {
+		click(event) {
+			if (Cube.selected.length) return startCubeExtrude(event);
 			function runEdit(amended, extend = getSpatialInterval(), direction_mode, even_extend) {
 				Undo.initEdit({elements: Mesh.selected, selection: true}, amended);
 
