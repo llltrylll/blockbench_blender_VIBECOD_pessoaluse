@@ -493,9 +493,11 @@ function makeCornerWorks(mesh, facePlans, edgeWorks, width) {
 			const profile = profiles[0];
 			const startPoint = profile[0];
 			const endPoint = profile[profile.length - 1];
+			let terminalFaceMarkerFound = false;
 			let terminalFaceFound = false;
 			for (const plan of facePlans.values()) {
 				if (!plan.cornerCapPoints[vertexKey]) continue;
+				terminalFaceMarkerFound = true;
 				const polygon = plan.polygon;
 				const expanded = [];
 				let inserted = false;
@@ -511,19 +513,44 @@ function makeCornerWorks(mesh, facePlans, edgeWorks, width) {
 						inserted = true;
 					}
 				}
-				if (inserted) {
-					const planeOrigin = plan.info.positions[0];
-					const tolerance = Math.max(1e-4, width * 1e-3);
-					for (const point of profile) {
-						const distanceToPlane = Math.abs(dot(subtract(point.position, planeOrigin), plan.info.normal));
-						if (distanceToPlane > tolerance) {
-							throw new Error('O acabamento desta aresta exigiria uma face terminal não plana. Reduza a largura ou use segmentos 1.');
-						}
+				if (!inserted) continue;
+
+				const planeOrigin = plan.info.positions[0];
+				const tolerance = Math.max(1e-4, width * 1e-3);
+				const profilePoints = profile.slice(1, -1);
+				for (const point of profile) {
+					const distanceToPlane = Math.abs(dot(subtract(point.position, planeOrigin), plan.info.normal));
+					if (distanceToPlane > tolerance) {
+						throw new Error('O acabamento desta aresta exigiria uma face terminal não plana. Reduza a largura ou use segmentos 1.');
 					}
-					plan.polygon = cleanPolygon(expanded);
-					terminalFaceFound = true;
-					break;
 				}
+				const projectedProfile = profilePoints.map(point => ({
+					...point,
+					uv: plan.face.localToUV(
+						new THREE.Vector3(point.position[0], point.position[1], point.position[2]),
+						plan.info.vertices
+					).toArray(),
+				}));
+				const orderedProfile = current => current.id === startPoint.id
+					? projectedProfile
+					: projectedProfile.slice().reverse();
+				const corrected = [];
+				for (let i = 0; i < polygon.length; i++) {
+					const current = polygon[i];
+					const next = polygon[(i + 1) % polygon.length];
+					corrected.push(current);
+					if (current.id === startPoint.id && next.id === endPoint.id) {
+						corrected.push(...orderedProfile(current));
+					} else if (current.id === endPoint.id && next.id === startPoint.id) {
+						corrected.push(...orderedProfile(next));
+					}
+				}
+				plan.polygon = cleanPolygon(corrected);
+				terminalFaceFound = true;
+				break;
+			}
+			if (terminalFaceMarkerFound && !terminalFaceFound) {
+				throw new Error('Não foi possível conectar o final do bevel à face vizinha.');
 			}
 			// If there is no third face (open mesh boundary), leave the
 			// bevel profile open just as the source mesh boundary is open.
