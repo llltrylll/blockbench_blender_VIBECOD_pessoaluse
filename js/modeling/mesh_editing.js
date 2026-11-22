@@ -44,14 +44,14 @@ export function uncorruptMesh() {
 }
 
 SharedActions.add('delete', {
-	condition: () => Modes.edit && Prop.active_panel == 'preview' && (
-		(Mesh.selected[0] && Project.mesh_selection[Mesh.selected[0].uuid]) ||
-		(Cube.selected.length && Cube.selected.length === Outliner.selected.length &&
-			BarItems.selection_mode.value === 'face' &&
+	priority: 10,
+	condition: () => Modes.edit && (
+		(Mesh.selected[0] && Prop.active_panel == 'preview' && Project.mesh_selection[Mesh.selected[0].uuid]) ||
+		(Cube.selected.length && BarItems.selection_mode.value === 'face' &&
 			Cube.selected.some(cube => getCubeComponentSelection(cube).faces.length))
 	),
 	run() {
-		if (Cube.selected.length && Cube.selected.length === Outliner.selected.length &&
+		if (Cube.selected.length &&
 			BarItems.selection_mode.value === 'face' &&
 			Cube.selected.some(cube => getCubeComponentSelection(cube).faces.length)) {
 			const cubes = Cube.selected.slice();
@@ -64,7 +64,7 @@ SharedActions.add('delete', {
 				clearCubeComponentSelection(cube);
 			});
 			Undo.finishEdit('Delete Cube Face');
-			Canvas.updateView({elements: cubes, element_aspects: {geometry: true, faces: true}, selection: true});
+			Canvas.updateView({elements: cubes, element_aspects: {geometry: true, faces: true, uv: true}, selection: true});
 			updateSelection();
 			return;
 		}
