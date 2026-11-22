@@ -1,3 +1,4 @@
+import './mesh/bevel'
 import './mesh/attach_armature'
 import { ProportionalEdit } from './mesh/proportional_edit';
 import './mesh/set_vertex_weights'
