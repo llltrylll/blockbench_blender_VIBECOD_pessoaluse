@@ -1,5 +1,77 @@
 import { TransformerModule } from "./transform_modules";
 import { getPivotObjects, getRotationObjects, getSelectedMovingElements, moveElementsInSpace } from "../transform";
+import { THREE } from "../../lib/libs";
+import { getCubeComponentSelection } from "../cube_selection_data";
+
+
+function getElementSnapVertices(element) {
+	if (element instanceof Cube) {
+		const selection = getCubeComponentSelection(element);
+		let indices = (selection.vertices || []).map(Number);
+		if (!indices.length && selection.edges?.length) {
+			indices = [...new Set(selection.edges.flat().map(Number))];
+		}
+		if (!indices.length && selection.faces?.length) {
+			indices = [...new Set(selection.faces.flatMap(key => element.faces[key]?.getVertexIndices() || []))];
+		}
+		if (!indices.length) indices = Array.from({length: 8}, (_, index) => index);
+		const vertices = element.getGlobalVertexPositions();
+		return indices.map(index => vertices[index] && new THREE.Vector3(...vertices[index]).add(scene.position)).filter(Boolean);
+	}
+	if (element instanceof Mesh) {
+		const selected = element.getSelectedVertices();
+		const keys = selected.length ? selected : Object.keys(element.vertices);
+		return keys.map(key => {
+			const point = new THREE.Vector3().fromArray(element.vertices[key]);
+			return element.mesh.localToWorld(point);
+		});
+	}
+	return [];
+}
+
+function getHitFaceSnapVertices(hit) {
+	const element = hit?.element;
+	const face = element?.faces?.[hit.face];
+	if (!element || !face || !hit.intersects?.[0]?.point) return [];
+	if (element instanceof Cube) {
+		const vertices = element.getGlobalVertexPositions();
+		return face.getVertexIndices().map(index => new THREE.Vector3(...vertices[index]).add(scene.position));
+	}
+	if (element instanceof Mesh) {
+		return face.vertices.map(key => element.mesh.localToWorld(new THREE.Vector3().fromArray(element.vertices[key])));
+	}
+	return [];
+}
+
+function calculateVertexSnapOffset(module, event, axis) {
+	const axisIndex = {x: 0, y: 1, z: 2}[axis];
+	if (axisIndex === undefined || !Preview.selected) return undefined;
+	const hit = Preview.selected.raycast(event);
+	if (!hit?.element || Outliner.selected.includes(hit.element)) return undefined;
+
+	const targetHitPoint = hit.intersects?.[0]?.point;
+	const targetVertices = getHitFaceSnapVertices(hit);
+	if (!targetHitPoint || !targetVertices.length) return undefined;
+	const targetVertex = targetVertices.reduce((closest, point) =>
+		point.distanceToSquared(targetHitPoint) < closest.distanceToSquared(targetHitPoint) ? point : closest
+	);
+
+	const movingVertices = Outliner.selected.flatMap(element => getElementSnapVertices(element));
+	if (!movingVertices.length) return undefined;
+	const movingVertex = movingVertices.reduce((closest, point) =>
+		point.distanceToSquared(targetVertex) < closest.distanceToSquared(targetVertex) ? point : closest
+	);
+
+	let axisVector = new THREE.Vector3(axisIndex === 0 ? 1 : 0, axisIndex === 1 ? 1 : 0, axisIndex === 2 ? 1 : 0);
+	if (getEditTransformSpace() === 2) {
+		const reference = Transformer.rotation_ref || Outliner.selected.find(element => element.mesh)?.mesh;
+		if (reference?.getWorldQuaternion) {
+			axisVector.applyQuaternion(reference.getWorldQuaternion(new THREE.Quaternion())).normalize();
+		}
+	}
+	const correction = targetVertex.clone().sub(movingVertex).dot(axisVector);
+	return (module.previous_value || 0) + correction;
+}
 
 function displayDistance(number) {
 	Blockbench.setCursorTooltip(trimFloatNumber(number));
@@ -195,10 +267,14 @@ new TransformerModule('edit', {
 		let tool_id = Toolbox.selected.id;
 
 		if (tool_id === 'move_tool') {
+			if (event.ctrlKey || event.ctrlOrCmd || Pressing.overrides.ctrl) {
+				const vertex_snap = calculateVertexSnapOffset(this, event, axis);
+				if (vertex_snap !== undefined) return vertex_snap;
+				return point[axis];
+			}
+			const snap_factor = canvasGridSize(event.shiftKey || Pressing.overrides.shift, false);
+			return Math.round(point[axis] / snap_factor) * snap_factor;
 
-			var snap_factor = canvasGridSize(event.shiftKey || Pressing.overrides.shift, event.ctrlOrCmd || Pressing.overrides.ctrl)
-			return Math.round( point[axis] / snap_factor ) * snap_factor;
-			
 		} else if (tool_id === 'resize_tool') {
 			if (second_axis) {
 				if (axis == 'y') {axis = 'z';} else
