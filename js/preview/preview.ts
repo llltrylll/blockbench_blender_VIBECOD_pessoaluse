@@ -1073,7 +1073,7 @@ export class Preview {
 				(data.type === 'element' || Toolbox.selected.id == 'knife_tool' || (data.type == 'line' && data.element instanceof SplineMesh))
 			) {
 				Undo.initSelection();
-				if (Toolbox.selected.selectFace && data.face && data.element.type != 'mesh' && data.element.type != 'spline' && (!Modes.paint || BarItems.brush_lock_mode.value == 'none')) {
+				if (Toolbox.selected.selectFace && data.face && data.element.type != 'mesh' && data.element.type != 'spline' && !(data.element instanceof Cube && select_mode !== 'object') && (!Modes.paint || BarItems.brush_lock_mode.value == 'none')) {
 					let face_selection = UVEditor.getSelectedFaces(data.element, true);
 					if (data.element.selected && (multi_select || group_select)) {
 						face_selection.safePush(data.face);
@@ -1288,7 +1288,22 @@ export class Preview {
 								}
 							}
 						}
-					} else if (data.element instanceof Cube && (select_mode === 'edge' || select_mode === 'vertex')) {
+					} else if (data.element instanceof Cube && (select_mode === 'face' || select_mode === 'cluster')) {
+						// Face selection for native cubes is independent from UV selection.
+						const cube = data.element;
+						if (!cube.selected) cube.select(event);
+						if (data.face) {
+							const components = getCubeComponentSelection(cube, true);
+						if (multi_select || group_select) {
+							components.faces.toggle(data.face);
+						} else {
+							unselectOtherNodes();
+							components.faces.replace([data.face]);
+						}
+						components.vertices.empty();
+						components.edges.empty();
+					}
+} else if (data.element instanceof Cube && (select_mode === 'edge' || select_mode === 'vertex')) {
 						// Native Cube component selection. The element remains a parametric cuboid.
 						const cube = data.element;
 						if (!cube.selected) cube.select(event);
@@ -1300,9 +1315,8 @@ export class Preview {
 						const components = getCubeComponentSelection(cube, true);
 						const vertices = components.vertices;
 						const edges = components.edges;
-						const uv_faces = UVEditor.getSelectedFaces(cube, true);
 
-							uv_faces.empty();
+							components.faces.empty();
 
 							if (select_mode === 'vertex') {
 								let closest_index = null;
