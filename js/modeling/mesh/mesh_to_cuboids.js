@@ -399,7 +399,7 @@ function makeCubeData(mesh, region, index) {
 	const southNormal = normalize(cross(region.axisU, multiply(region.axisV, -1)));
 	const isSouth = dot(region.normal, southNormal) >= 0;
 	const basisX = isSouth ? region.axisU : multiply(region.axisU, -1);
-	const basisY = isSouth ? multiply(region.axisV, -1) : region.axisV;
+	const basisY = multiply(region.axisV, -1);
 	const basisZ = normalize(cross(basisX, basisY));
 	const matrix = new THREE.Matrix4().makeBasis(
 		new THREE.Vector3(...basisX),
@@ -483,7 +483,7 @@ function convertMeshes(prepared, keepBackup) {
 			const newCubes = [];
 			entry.regions.forEach((region, index) => {
 				const cube = makeCubeData(mesh, region, index + 1);
-				cube.sortInBefore(mesh, index).init();
+				cube.sortInBefore(mesh, 0).init();
 				newCubes.push(cube);
 			});
 			created.push(...newCubes);
