@@ -10,6 +10,7 @@ import { CSS3DRenderer } from '../lib/CSS3DRenderer';
 import { PointerTarget } from '../interface/pointer_target';
 import { unselectInterface } from '../interface/interface';
 import { sameMeshEdge } from '../modeling/mesh/util';
+import { sameCubeEdge } from '../modeling/cube_selection';
 
 const background_scene = new THREE.Scene();
 const background_camera = new THREE.PerspectiveCamera(45, 1, 1, 10);
@@ -1079,6 +1080,11 @@ export class Preview {
 						face_selection.replace([data.face]);
 					}
 				}
+				if (data.element instanceof Cube && select_mode === 'face' && data.face) {
+					const cube_faces = data.element.getSelectedFaces(true);
+					const uv_faces = UVEditor.getSelectedFaces(data.element);
+					cube_faces.replace(uv_faces);
+				}
 				Blockbench.dispatchEvent('canvas_select', data)
 				if (Modes.paint && !(Toolbox.selected.id == 'fill_tool' && BarItems.fill_mode.value == 'selected_elements')) {
 					// @ts-expect-error
@@ -1280,6 +1286,77 @@ export class Preview {
 									} else {
 										unselectOtherNodes();
 										faces.empty();
+										edges.splice(0, Infinity, closest_edge);
+										vertices.replace(closest_edge);
+									}
+								}
+							}
+						}
+					} else if (data.element instanceof Cube && (select_mode === 'edge' || select_mode === 'vertex')) {
+						// Native Cube component selection. The element remains a parametric cuboid.
+						const cube = data.element;
+						if (!cube.selected) cube.select(event);
+						const face = cube.faces[data.face];
+						if (face && data.intersects?.[0]?.point) {
+							const face_indices = face.getVertexIndices();
+							const click_point = data.intersects[0].point;
+						const world_vertices = cube.getGlobalVertexPositions().map(coords => new THREE.Vector3(...coords).add(scene.position));
+						const vertices = cube.getSelectedVertices(true);
+						const edges = cube.getSelectedEdges(true);
+						const faces = cube.getSelectedFaces(true);
+						const uv_faces = UVEditor.getSelectedFaces(cube, true);
+
+							faces.empty();
+							uv_faces.empty();
+
+							if (select_mode === 'vertex') {
+								let closest_index = null;
+								let closest_dist_sq = Infinity;
+								face_indices.forEach(index => {
+									const dist_sq = world_vertices[index].distanceToSquared(click_point);
+									if (dist_sq < closest_dist_sq) {
+										closest_dist_sq = dist_sq;
+										closest_index = String(index);
+									}
+								});
+								if (closest_index !== null) {
+									if (multi_select || group_select) {
+										vertices.toggle(closest_index);
+									} else {
+										unselectOtherNodes();
+										vertices.replace([closest_index]);
+										edges.empty();
+									}
+								}
+							} else if (select_mode === 'edge') {
+								let closest_edge = null;
+								let closest_dist_sq = Infinity;
+								const segment = new THREE.Line3();
+								face_indices.forEach((index_a, i) => {
+									const index_b = face_indices[i+1] ?? face_indices[0];
+									segment.set(world_vertices[index_a], world_vertices[index_b]);
+									const closest_point = segment.closestPointToPoint(click_point, true, new THREE.Vector3());
+									const dist_sq = click_point.distanceToSquared(closest_point);
+									if (dist_sq < closest_dist_sq) {
+										closest_dist_sq = dist_sq;
+										closest_edge = [String(index_a), String(index_b)];
+									}
+								});
+								if (closest_edge) {
+									if (multi_select || group_select) {
+										const existing_index = edges.findIndex(edge => sameCubeEdge(edge, closest_edge));
+										if (existing_index >= 0) {
+											edges.splice(existing_index, 1);
+											closest_edge.forEach(key => {
+												const still_used = edges.some(edge => edge.includes(key));
+												if (!still_used) vertices.remove(key);
+											});
+										} else {
+											edges.push(closest_edge);
+											vertices.safePush(...closest_edge);
+										}
+									} else {
+										unselectOtherNodes();
 										edges.splice(0, Infinity, closest_edge);
 										vertices.replace(closest_edge);
 									}
