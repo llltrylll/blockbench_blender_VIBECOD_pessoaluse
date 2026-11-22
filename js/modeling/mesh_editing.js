@@ -333,6 +333,26 @@ SharedActions.add('invert_selection', {
 })
 
 BARS.defineActions(function() {
+	// Blender-style component selection: 1 vertex, 2 edge, 3 face.
+	// Keep these as separate actions so number keys don't activate Blockbench pages.
+	new Action('cube_selection_vertex', {
+		category: 'edit',
+		keybind: new Keybind({key: 49}),
+		condition: () => Modes.edit && (Mesh.selected.length || Cube.selected.length),
+		click() { BarItems.selection_mode.change('vertex'); }
+	});
+	new Action('cube_selection_edge', {
+		category: 'edit',
+		keybind: new Keybind({key: 50}),
+		condition: () => Modes.edit && (Mesh.selected.length || Cube.selected.length),
+		click() { BarItems.selection_mode.change('edge'); }
+	});
+	new Action('cube_selection_face', {
+		category: 'edit',
+		keybind: new Keybind({key: 51}),
+		condition: () => Modes.edit && (Mesh.selected.length || Cube.selected.length),
+		click() { BarItems.selection_mode.change('face'); }
+	});
 	let previous_selection_mode = 'object';
 	new BarSelect('selection_mode', {
 		options: {
