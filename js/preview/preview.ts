@@ -11,6 +11,7 @@ import { PointerTarget } from '../interface/pointer_target';
 import { unselectInterface } from '../interface/interface';
 import { sameMeshEdge } from '../modeling/mesh/util';
 import { sameCubeEdge } from '../modeling/cube_selection';
+import { getCubeComponentSelection } from '../modeling/cube_selection_data';
 
 const background_scene = new THREE.Scene();
 const background_camera = new THREE.PerspectiveCamera(45, 1, 1, 10);
@@ -1301,12 +1302,11 @@ export class Preview {
 							const face_indices = face.getVertexIndices();
 							const click_point = data.intersects[0].point;
 						const world_vertices = cube.getGlobalVertexPositions().map(coords => new THREE.Vector3(...coords).add(scene.position));
-						const vertices = cube.getSelectedVertices(true);
-						const edges = cube.getSelectedEdges(true);
-						const faces = cube.getSelectedFaces(true);
+						const components = getCubeComponentSelection(cube, true);
+						const vertices = components.vertices;
+						const edges = components.edges;
 						const uv_faces = UVEditor.getSelectedFaces(cube, true);
 
-							faces.empty();
 							uv_faces.empty();
 
 							if (select_mode === 'vertex') {
