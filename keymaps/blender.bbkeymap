@@ -104,6 +104,7 @@
 		"camera_north": {"key": 102},
 		"camera_east": {"key": 103},
 		"camera_west": {"key": 105},
+		"walk_navigation": {"key": 192, "ctrl": true},
 		"transform_space": null,
 		"rotation_space": null,
 		"slider_pos_x": null,
