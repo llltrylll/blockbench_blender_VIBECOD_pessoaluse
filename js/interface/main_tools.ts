@@ -66,7 +66,7 @@ BARS.defineActions(() => {
 		transform_toolbar: 'element_position',
 		alt_tool: 'resize_tool',
 		modes: ['edit', 'display', 'animate', 'pose'],
-		keybind: new Keybind({key: 'v'}),
+		keybind: new Keybind({key: 'g'}),
 	})
 	new Tool('resize_tool', {
 		icon: 'open_with',
