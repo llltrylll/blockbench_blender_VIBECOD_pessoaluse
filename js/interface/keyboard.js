@@ -30,6 +30,17 @@ if (localStorage.getItem('keybindings')) {
 	}
 }
 
+ // Apply this workflow's Blender-style shortcuts once to existing installations.
+ // Saved keybindings otherwise override the updated bundled .bbkeymap preset.
+ const modelingKeybindMigration = 'blockbench_blender_modeling_keybinds_v1';
+ if (localStorage.getItem(modelingKeybindMigration) !== '1') {
+	Keybinds.stored.add_mesh = {key: -1};
+	Keybinds.stored.add_cube = {key: 65, shift: true};
+	Keybinds.stored.delete = {key: 88};
+	Keybinds.save();
+	localStorage.setItem(modelingKeybindMigration, '1');
+ }
+
 export class Keybind {
 	/**
 	 * Create a keybind
