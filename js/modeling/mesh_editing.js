@@ -3,7 +3,6 @@ import { ProportionalEdit } from './mesh/proportional_edit';
 import './mesh/set_vertex_weights'
 import './mesh/loop_cut'
 import './mesh/knife_tool'
-import './cube_extrude';
 import './mesh/add_mesh'
 import './mesh/seam_tool'
 import './mesh/merge_split'
@@ -13,6 +12,7 @@ import { sameMeshEdge } from './mesh/util';
 import { getSpatialInterval } from './transform';
 import { CUBE_EDGE_INDICES, sameCubeEdge } from './cube_selection';
 import { getCubeComponentSelection, clearCubeComponentSelection } from './cube_selection_data';
+import './cube_extrude';
 
 export function uncorruptMesh() {
 	for (let mesh of Mesh.selected) {
