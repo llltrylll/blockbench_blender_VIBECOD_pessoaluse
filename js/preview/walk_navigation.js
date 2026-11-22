@@ -20,6 +20,8 @@ export default class WalkNavigation {
 		this.previousFov = null;
 		this.fovValue = 100;
 		this.fovPanel = null;
+		this.lockButton = null;
+		this.temporarilyUnlocked = false;
 		this.cancelOnExit = false;
 		this.savedPose = null;
 		this.suppressNextContextMenu = false;
@@ -73,6 +75,8 @@ export default class WalkNavigation {
 	onPointerLockChange() {
 		if (document.pointerLockElement === this.canvas) {
 			if (!this.active) this.start();
+		} else if (this.active && this.temporarilyUnlocked) {
+			this.updateFovControlState();
 		} else if (this.active) {
 			this.stop();
 		}
@@ -85,6 +89,7 @@ export default class WalkNavigation {
 			return;
 		}
 		this.active = true;
+		this.temporarilyUnlocked = false;
 		this.cancelOnExit = false;
 		this.previousControlsEnabled = this.controls.enabled;
 		this.previousFov = camera.fov;
@@ -105,7 +110,7 @@ export default class WalkNavigation {
 		this.lastTime = performance.now();
 		this.createFovControl();
 		this.frame = requestAnimationFrame(this.update);
-		Blockbench.showQuickMessage('First person: WASD · Q/E vertical · Shift faster · [ ] FOV · LMB confirm · RMB/Esc cancel', 5500);
+		Blockbench.showQuickMessage('First person: WASD · Q/E vertical · Shift faster · [ ] FOV · Tab edit FOV · LMB confirm · RMB/Esc cancel', 5500);
 	}
 
 	createFovControl() {
@@ -158,6 +163,18 @@ export default class WalkNavigation {
 		Object.assign(slider.style, {width: '110px', accentColor: '#e0b44c'});
 		const degrees = document.createElement('span');
 		degrees.textContent = '°';
+		const lockButton = document.createElement('button');
+		lockButton.type = 'button';
+		lockButton.textContent = 'Resume';
+		Object.assign(lockButton.style, {
+			padding: '3px 6px',
+			border: '1px solid #777',
+			borderRadius: '3px',
+			background: '#33383f',
+			color: '#fff',
+			cursor: 'pointer'
+		});
+		lockButton.addEventListener('click', () => this.resumePointerLock());
 
 		const applyFov = value => {
 			const parsed = Number(value);
@@ -179,10 +196,34 @@ export default class WalkNavigation {
 			}
 		});
 		slider.addEventListener('input', () => applyFov(slider.value));
-		panel.append(label, number, slider, degrees);
+		panel.append(label, number, slider, degrees, lockButton);
 		parent.appendChild(panel);
 		this.fovPanel = panel;
+		this.lockButton = lockButton;
 		this.applyFov = applyFov;
+		this.updateFovControlState();
+	}
+
+	updateFovControlState() {
+		if (this.lockButton) this.lockButton.style.display = this.temporarilyUnlocked ? '' : 'none';
+	}
+
+	resumePointerLock() {
+		if (!this.active || !this.temporarilyUnlocked) return;
+		try {
+			const request = this.canvas.requestPointerLock();
+			this.temporarilyUnlocked = false;
+			this.updateFovControlState();
+			if (request && typeof request.catch === 'function') {
+				request.catch(() => {
+					this.temporarilyUnlocked = true;
+					this.updateFovControlState();
+				});
+			}
+		} catch (error) {
+			this.temporarilyUnlocked = true;
+			this.updateFovControlState();
+		}
 	}
 
 	onPointerDown(event) {
@@ -192,7 +233,11 @@ export default class WalkNavigation {
 		event.stopImmediatePropagation();
 		this.suppressNextContextMenu = true;
 		this.cancelOnExit = event.button === 2;
-		document.exitPointerLock?.();
+		if (this.temporarilyUnlocked) {
+			this.stop();
+		} else {
+			document.exitPointerLock?.();
+		}
 	}
 
 	stop() {
@@ -222,6 +267,8 @@ export default class WalkNavigation {
 		}
 		if (this.fovPanel) this.fovPanel.remove();
 		this.fovPanel = null;
+		this.lockButton = null;
+		this.temporarilyUnlocked = false;
 		this.applyFov = null;
 		this.previousFov = null;
 		this.savedPose = null;
@@ -229,7 +276,7 @@ export default class WalkNavigation {
 	}
 
 	onMouseMove(event) {
-		if (!this.active) return;
+		if (!this.active || this.temporarilyUnlocked) return;
 		this.yaw -= (event.movementX || 0) * this.sensitivity;
 		this.pitch -= (event.movementY || 0) * this.sensitivity;
 		this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
@@ -250,6 +297,7 @@ export default class WalkNavigation {
 
 	onKeyDown(event) {
 		if (!this.active) return;
+		if (this.fovPanel?.contains(event.target)) return;
 		if (event.code === 'Escape') {
 			event.preventDefault();
 			event.stopImmediatePropagation();
@@ -258,6 +306,17 @@ export default class WalkNavigation {
 			return;
 		}
 		if (event.code === 'Backquote' && event.ctrlKey) return;
+		if (event.code === 'Tab') {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			if (this.temporarilyUnlocked) this.resumePointerLock();
+			else {
+				this.temporarilyUnlocked = true;
+				this.updateFovControlState();
+				document.exitPointerLock?.();
+			}
+			return;
+		}
 
 		if (['BracketLeft', 'NumpadSubtract', 'BracketRight', 'NumpadAdd'].includes(event.code)) {
 			const direction = (event.code === 'BracketLeft' || event.code === 'NumpadSubtract') ? -1 : 1;
