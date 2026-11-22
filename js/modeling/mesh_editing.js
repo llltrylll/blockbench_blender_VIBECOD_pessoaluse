@@ -155,10 +155,47 @@ SharedActions.add('delete', {
 	}
 })
 SharedActions.add('select_all', {
-	condition: () => Modes.edit && Mesh.selected.length && Mesh.selected.length === Outliner.selected.length && BarItems.selection_mode.value !== 'object',
+	condition: () => Modes.edit && BarItems.selection_mode.value !== 'object' && (
+		(Mesh.selected.length && Mesh.selected.length === Outliner.selected.length) ||
+		(Cube.selected.length && Cube.selected.length === Outliner.selected.length)
+	),
 	priority: 1,
 	run() {
 		let selection_mode = BarItems.selection_mode.value;
+		if (Cube.selected.length && Cube.selected.length === Outliner.selected.length) {
+			if (selection_mode == 'vertex') {
+				let unselect = Cube.selected[0].getSelectedVertices().length === 8;
+				Cube.selected.forEach(cube => {
+					cube.getSelectedVertices(true).replace(unselect ? [] : Array.from({length: 8}, (_, i) => String(i)));
+					cube.getSelectedEdges(true).empty();
+					cube.getSelectedFaces(true).empty();
+					UVEditor.getSelectedFaces(cube, true).empty();
+				});
+			} else if (selection_mode == 'edge') {
+				let unselect = Cube.selected[0].getSelectedEdges().length === CUBE_EDGE_INDICES.length;
+				Cube.selected.forEach(cube => {
+					cube.getSelectedVertices(true).empty();
+					cube.getSelectedEdges(true).replace(unselect ? [] : CUBE_EDGE_INDICES.map(edge => edge.slice()));
+					cube.getSelectedFaces(true).empty();
+					UVEditor.getSelectedFaces(cube, true).empty();
+					if (!unselect) {
+						cube.getSelectedVertices(true).replace(CUBE_EDGE_INDICES.flat().filter((key, i, arr) => arr.indexOf(key) === i));
+					}
+				});
+			} else {
+				let unselect = Cube.selected[0].getSelectedFaces().length === 6;
+				Cube.selected.forEach(cube => {
+					const face_keys = unselect ? [] : Object.keys(cube.faces);
+					cube.getSelectedFaces(true).replace(face_keys);
+					UVEditor.getSelectedFaces(cube, true).replace(face_keys);
+					cube.getSelectedVertices(true).empty();
+					cube.getSelectedEdges(true).empty();
+				});
+			}
+			updateSelection();
+			return;
+		}
+
 		if (selection_mode == 'vertex') {
 			let unselect = Mesh.selected[0].getSelectedVertices().length == Object.keys(Mesh.selected[0].vertices).length;
 			Mesh.selected.forEach(mesh => {
@@ -203,20 +240,58 @@ SharedActions.add('select_all', {
 	}
 })
 SharedActions.add('unselect_all', {
-	condition: () => Modes.edit && Mesh.selected.length && Mesh.selected.length === Outliner.selected.length && BarItems.selection_mode.value !== 'object',
+	condition: () => Modes.edit && BarItems.selection_mode.value !== 'object' && (
+		(Mesh.selected.length && Mesh.selected.length === Outliner.selected.length) ||
+		(Cube.selected.length && Cube.selected.length === Outliner.selected.length)
+	),
 	priority: 1,
 	run() {
 		Mesh.selected.forEach(mesh => {
 			delete Project.mesh_selection[mesh.uuid];
 		})
+		Cube.selected.forEach(cube => {
+			delete Project.mesh_selection[cube.uuid];
+			UVEditor.getSelectedFaces(cube, true).empty();
+		})
 		updateSelection();
 	}
 })
 SharedActions.add('invert_selection', {
-	condition: () => Modes.edit && Mesh.selected.length && Mesh.selected.length === Outliner.selected.length && BarItems.selection_mode.value !== 'object',
+	condition: () => Modes.edit && BarItems.selection_mode.value !== 'object' && (
+		(Mesh.selected.length && Mesh.selected.length === Outliner.selected.length) ||
+		(Cube.selected.length && Cube.selected.length === Outliner.selected.length)
+	),
 	priority: 1,
 	run() {
 		let selection_mode = BarItems.selection_mode.value;
+		if (Cube.selected.length && Cube.selected.length === Outliner.selected.length) {
+			Cube.selected.forEach(cube => {
+				if (selection_mode == 'vertex') {
+					const selected = cube.getSelectedVertices();
+					cube.getSelectedVertices(true).replace(Array.from({length: 8}, (_, i) => String(i)).filter(key => !selected.includes(key)));
+					cube.getSelectedEdges(true).empty();
+					cube.getSelectedFaces(true).empty();
+					UVEditor.getSelectedFaces(cube, true).empty();
+				} else if (selection_mode == 'edge') {
+					const old_edges = cube.getSelectedEdges().slice();
+					const edges = CUBE_EDGE_INDICES.filter(edge => !old_edges.find(edge2 => sameCubeEdge(edge2, edge)));
+					cube.getSelectedEdges(true).replace(edges.map(edge => edge.slice()));
+					cube.getSelectedVertices(true).replace(edges.flat().filter((key, i, arr) => arr.indexOf(key) === i));
+					cube.getSelectedFaces(true).empty();
+					UVEditor.getSelectedFaces(cube, true).empty();
+				} else {
+					const old_faces = cube.getSelectedFaces().slice();
+					const face_keys = Object.keys(cube.faces).filter(key => !old_faces.includes(key));
+					cube.getSelectedFaces(true).replace(face_keys);
+					UVEditor.getSelectedFaces(cube, true).replace(face_keys);
+					cube.getSelectedVertices(true).empty();
+					cube.getSelectedEdges(true).empty();
+				}
+			});
+			updateSelection();
+			return;
+		}
+
 		if (selection_mode == 'vertex') {
 			Mesh.selected.forEach(mesh => {
 				let selected = mesh.getSelectedVertices();
@@ -259,7 +334,6 @@ SharedActions.add('invert_selection', {
 		updateSelection();
 	}
 })
-
 BARS.defineActions(function() {
 	let previous_selection_mode = 'object';
 	new BarSelect('selection_mode', {
