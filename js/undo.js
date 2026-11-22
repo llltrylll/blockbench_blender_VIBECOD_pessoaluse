@@ -880,7 +880,7 @@ UndoSystem.selectionSave = class {
 			} else if (element instanceof Cube) {
 				const components = getCubeComponentSelection(element);
 				this.geometry[element.uuid] = {
-					faces: UVEditor.getSelectedFaces(element).slice(),
+					faces: components.faces.slice(),
 					edges: components.edges.map(edge => edge.slice()),
 					vertices: components.vertices.slice(),
 				}
@@ -958,8 +958,8 @@ UndoSystem.selectionSave = class {
 					element.getSelectedVertices(true).replace(geo_data.vertices);
 
 				} else if (element instanceof Cube) {
-					UVEditor.getSelectedFaces(element, true).replace(geo_data.faces || []);
 					setCubeComponentSelection(element, {
+						faces: geo_data.faces || [],
 						edges: geo_data.edges || [],
 						vertices: geo_data.vertices || [],
 					});
