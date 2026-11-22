@@ -64,7 +64,9 @@ function calculateVertexSnapOffset(module, event, axis) {
 
 	let axisVector = new THREE.Vector3(axisIndex === 0 ? 1 : 0, axisIndex === 1 ? 1 : 0, axisIndex === 2 ? 1 : 0);
 	if (getEditTransformSpace() === 2) {
-		const reference = Transformer.rotation_ref || Outliner.selected.find(element => element.mesh)?.mesh;
+		const reference = Transformer.rotation_ref?.getWorldQuaternion
+			? Transformer.rotation_ref
+			: Outliner.selected.find(element => element.mesh)?.mesh;
 		if (reference?.getWorldQuaternion) {
 			axisVector.applyQuaternion(reference.getWorldQuaternion(new THREE.Quaternion())).normalize();
 		}
