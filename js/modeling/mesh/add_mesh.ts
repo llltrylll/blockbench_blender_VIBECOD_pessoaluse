@@ -449,6 +449,7 @@ BARS.defineActions(function() {
 	new Action('add_mesh', {
 		icon: 'fa-gem',
 		category: 'edit',
+		keybind: new Keybind({key: -1}),
 		condition: {modes: ['edit'], method: () => (Format.meshes)},
 		click: function () {
 			add_mesh_dialog.show();
