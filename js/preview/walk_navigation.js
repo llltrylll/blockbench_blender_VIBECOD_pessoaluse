@@ -17,6 +17,7 @@ export default class WalkNavigation {
 		this.yaw = 0;
 		this.pitch = 0;
 		this.previousControlsEnabled = true;
+		this.previousFov = null;
 
 		this.onPointerLockChange = this.onPointerLockChange.bind(this);
 		this.onMouseMove = this.onMouseMove.bind(this);
@@ -77,6 +78,9 @@ export default class WalkNavigation {
 		}
 		this.active = true;
 		this.previousControlsEnabled = this.controls.enabled;
+		this.previousFov = camera.fov;
+		camera.fov = 120;
+		camera.updateProjectionMatrix();
 		this.controls.enabled = false;
 		this.keys.clear();
 
@@ -97,6 +101,11 @@ export default class WalkNavigation {
 		this.controls.enabled = this.previousControlsEnabled;
 
 		const camera = this.controls.object;
+		if (camera && camera.isPerspectiveCamera && this.previousFov !== null) {
+			camera.fov = this.previousFov;
+			camera.updateProjectionMatrix();
+			this.previousFov = null;
+		}
 		if (camera && camera.isPerspectiveCamera) {
 			const direction = camera.getWorldDirection(new THREE.Vector3()).normalize();
 			this.controls.target.copy(camera.position).addScaledVector(direction, 10);
