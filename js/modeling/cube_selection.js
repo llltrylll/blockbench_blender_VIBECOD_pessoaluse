@@ -1,0 +1,116 @@
+import { THREE } from '../lib/libs';
+
+export const CUBE_EDGE_INDICES = [
+	[0, 1], [0, 2], [0, 5], [1, 3],
+	[1, 4], [2, 3], [2, 7], [3, 6],
+	[4, 5], [4, 6], [5, 7], [6, 7],
+].map(edge => edge.map(String));
+
+export function sameCubeEdge(a, b) {
+	return !!a && !!b && a.length === 2 && b.length === 2
+		&& ((a[0] === b[0] && a[1] === b[1]) || (a[0] === b[1] && a[1] === b[0]));
+}
+
+const OVERLAY_NAME = 'cube_component_selection_overlay';
+const marker_geometry = new THREE.SphereGeometry(0.16, 10, 8);
+const vertex_material = new THREE.MeshBasicMaterial({
+	color: 0xffc44d,
+	depthTest: false,
+	depthWrite: false,
+	toneMapped: false,
+});
+const edge_material = new THREE.LineBasicMaterial({
+	color: 0xffc44d,
+	depthTest: false,
+	depthWrite: false,
+	toneMapped: false,
+});
+
+function removeOverlay(cube) {
+	const mesh = cube.mesh;
+	if (!mesh) return;
+	const old = mesh.getObjectByName(OVERLAY_NAME);
+	if (old) {
+		old.parent?.remove(old);
+		old.traverse(child => {
+			if (child.geometry && child.geometry !== marker_geometry) child.geometry.dispose();
+		});
+	}
+}
+
+function getLocalVertices(cube) {
+	const mesh = cube.mesh;
+	if (!mesh) return [];
+	mesh.updateWorldMatrix(true, false);
+	const inverse = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
+	const world_vertices = cube.getGlobalVertexPositions();
+	return world_vertices.map(coords => {
+		const point = new THREE.Vector3(...coords).add(scene.position);
+		return point.applyMatrix4(inverse);
+	});
+}
+
+export function updateCubeComponentOverlay(cube) {
+	removeOverlay(cube);
+	if (!Project || !cube?.selected || !Modes.edit || !BarItems.selection_mode || BarItems.selection_mode.value === 'object') return;
+
+	const selection = Project.mesh_selection?.[cube.uuid];
+	if (!selection) return;
+
+	const mode = BarItems.selection_mode.value;
+	const selected_vertices = (mode === 'vertex' || mode === 'edge')
+		? (selection.vertices || []).map(key => Number(key)).filter(key => Number.isInteger(key) && key >= 0 && key < 8)
+		: [];
+	const selected_edges = mode === 'edge' ? (selection.edges || []) : [];
+	if (!selected_vertices.length && !selected_edges.length) return;
+
+	const mesh = cube.mesh;
+	if (!mesh) return;
+	const local_vertices = getLocalVertices(cube);
+	if (local_vertices.length !== 8) return;
+
+	const group = new THREE.Group();
+	group.name = OVERLAY_NAME;
+	group.renderOrder = 10000;
+
+	const marker_indices = new Set(selected_vertices);
+	const line_positions = [];
+	selected_edges.forEach(edge => {
+		const a = Number(edge[0]);
+		const b = Number(edge[1]);
+		if (!Number.isInteger(a) || !Number.isInteger(b) || !local_vertices[a] || !local_vertices[b]) return;
+		marker_indices.add(a);
+		marker_indices.add(b);
+		line_positions.push(local_vertices[a], local_vertices[b]);
+	});
+
+	if (line_positions.length) {
+		const geometry = new THREE.BufferGeometry().setFromPoints(line_positions);
+		const lines = new THREE.LineSegments(geometry, edge_material);
+		lines.renderOrder = 10000;
+		lines.raycast = () => {};
+		group.add(lines);
+	}
+
+	marker_indices.forEach(index => {
+		const marker = new THREE.Mesh(marker_geometry, vertex_material);
+		marker.position.copy(local_vertices[index]);
+		marker.renderOrder = 10001;
+		marker.raycast = () => {};
+		group.add(marker);
+	});
+
+	group.traverse(child => {
+		child.frustumCulled = false;
+	});
+	mesh.add(group);
+}
+
+export function updateCubeComponentOverlays() {
+	if (!Project || !Cube?.all) return;
+	Cube.all.forEach(cube => updateCubeComponentOverlay(cube));
+}
+
+if (typeof Blockbench !== 'undefined') {
+	Blockbench.on('update_selection', updateCubeComponentOverlays);
+}
