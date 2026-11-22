@@ -75,7 +75,7 @@ export function updateCubeComponentOverlay(cube) {
 		? (selection.vertices || []).map(key => Number(key)).filter(key => Number.isInteger(key) && key >= 0 && key < 8)
 		: [];
 	const selected_edges = mode === 'edge' ? (selection.edges || []) : [];
-	const selected_faces = mode === 'face' ? (selection.faces || []) : [];
+	const selected_faces = (mode === 'face' || mode === 'cluster') ? (selection.faces || []) : [];
 	if (!selected_vertices.length && !selected_edges.length && !selected_faces.length) return;
 
 	const mesh = cube.mesh;
