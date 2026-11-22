@@ -275,7 +275,7 @@ SharedActions.add('invert_selection', {
 					const edges = CUBE_EDGE_INDICES.filter(edge => !old_edges.find(edge2 => sameCubeEdge(edge2, edge)));
 					components.edges.replace(edges.map(edge => edge.slice()));
 					components.vertices.replace(edges.flat().filter((key, i, arr) => arr.indexOf(key) === i));
-					UVEditor.getSelectedFaces(cube, true).empty();
+					components.faces.empty();
 				} else {
 					const old_faces = components.faces.slice();
 					const face_keys = Object.keys(cube.faces).filter(key => !old_faces.includes(key));
