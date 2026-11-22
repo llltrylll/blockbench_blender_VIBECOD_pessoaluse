@@ -100,9 +100,6 @@ declare class Cube extends OutlinerElement {
 	transferOrigin(origin: ArrayVector3, update?: boolean): void
 	getWorldCenter(): THREE.Vector3
 	getGlobalVertexPositions(): ArrayVector3[]
-	getSelectedVertices(make?: boolean): string[]
-	getSelectedEdges(make?: boolean): string[][]
-	getSelectedFaces(make?: boolean): string[]
 	setUVMode(box_uv: boolean): void
 	setColor(color: number): void
 	applyTexture(texture: Texture, faces: true | undefined | CubeFaceDirection[]): void
