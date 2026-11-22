@@ -2,7 +2,7 @@ import { THREE } from '../lib/libs';
 
 /**
  * Keyboard-and-mouse first-person navigation for the active Blockbench viewport.
- * Pointer Lock keeps mouse look independent from the normal orbit drag controls.
+ * Left click commits the camera move; right click or Esc restores the entry pose.
  */
 export default class WalkNavigation {
 	constructor(controls) {
@@ -18,11 +18,17 @@ export default class WalkNavigation {
 		this.pitch = 0;
 		this.previousControlsEnabled = true;
 		this.previousFov = null;
+		this.fovValue = 100;
+		this.fovPanel = null;
+		this.cancelOnExit = false;
+		this.savedPose = null;
+		this.suppressNextContextMenu = false;
 
 		this.onPointerLockChange = this.onPointerLockChange.bind(this);
 		this.onMouseMove = this.onMouseMove.bind(this);
 		this.onKeyDown = this.onKeyDown.bind(this);
 		this.onKeyUp = this.onKeyUp.bind(this);
+		this.onPointerDown = this.onPointerDown.bind(this);
 		this.update = this.update.bind(this);
 		this.onWindowBlur = this.onWindowBlur.bind(this);
 
@@ -30,11 +36,13 @@ export default class WalkNavigation {
 		document.addEventListener('mousemove', this.onMouseMove);
 		document.addEventListener('keydown', this.onKeyDown, true);
 		document.addEventListener('keyup', this.onKeyUp, true);
+		document.addEventListener('pointerdown', this.onPointerDown, true);
 		window.addEventListener('blur', this.onWindowBlur);
 	}
 
 	toggle() {
 		if (this.active || document.pointerLockElement === this.canvas) {
+			this.cancelOnExit = false;
 			document.exitPointerLock?.();
 			return;
 		}
@@ -77,9 +85,16 @@ export default class WalkNavigation {
 			return;
 		}
 		this.active = true;
+		this.cancelOnExit = false;
 		this.previousControlsEnabled = this.controls.enabled;
 		this.previousFov = camera.fov;
-		camera.fov = 120;
+		this.savedPose = {
+			position: camera.position.clone(),
+			quaternion: camera.quaternion.clone(),
+			rotationOrder: camera.rotation.order,
+			target: this.controls.target.clone()
+		};
+		camera.fov = this.fovValue;
 		camera.updateProjectionMatrix();
 		this.controls.enabled = false;
 		this.keys.clear();
@@ -88,8 +103,96 @@ export default class WalkNavigation {
 		this.yaw = Math.atan2(-direction.x, -direction.z);
 		this.pitch = Math.asin(Math.max(-1, Math.min(1, direction.y)));
 		this.lastTime = performance.now();
+		this.createFovControl();
 		this.frame = requestAnimationFrame(this.update);
-		Blockbench.showQuickMessage('First person: WASD · Q/E vertical · Mouse · Shift faster · Esc exit', 4500);
+		Blockbench.showQuickMessage('First person: WASD · Q/E vertical · Shift faster · [ ] FOV · LMB confirm · RMB/Esc cancel', 5500);
+	}
+
+	createFovControl() {
+		const parent = this.canvas.parentElement;
+		if (!parent) return;
+		if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
+
+		const panel = document.createElement('div');
+		panel.className = 'walk_navigation_fov';
+		Object.assign(panel.style, {
+			position: 'absolute',
+			top: '12px',
+			right: '12px',
+			zIndex: '10000',
+			display: 'flex',
+			alignItems: 'center',
+			gap: '7px',
+			padding: '7px 9px',
+			borderRadius: '5px',
+			background: 'rgba(20, 22, 26, 0.88)',
+			color: '#ffffff',
+			font: '12px sans-serif',
+			boxShadow: '0 1px 5px rgba(0,0,0,.4)',
+			pointerEvents: 'auto'
+		});
+
+		const label = document.createElement('span');
+		label.textContent = 'FOV';
+		const number = document.createElement('input');
+		number.type = 'number';
+		number.min = '30';
+		number.max = '140';
+		number.step = '1';
+		number.value = String(this.fovValue);
+		Object.assign(number.style, {
+			width: '48px',
+			padding: '2px 3px',
+			border: '1px solid #666',
+			borderRadius: '3px',
+			background: '#17191d',
+			color: '#ffffff'
+		});
+		const slider = document.createElement('input');
+		slider.type = 'range';
+		slider.min = '30';
+		slider.max = '140';
+		slider.step = '1';
+		slider.value = String(this.fovValue);
+		slider.title = 'Use [ and ] while pointer is locked';
+		Object.assign(slider.style, {width: '110px', accentColor: '#e0b44c'});
+		const degrees = document.createElement('span');
+		degrees.textContent = '°';
+
+		const applyFov = value => {
+			const parsed = Number(value);
+			if (!Number.isFinite(parsed)) return;
+			this.fovValue = Math.max(30, Math.min(140, Math.round(parsed)));
+			number.value = String(this.fovValue);
+			slider.value = String(this.fovValue);
+			const camera = this.controls.object;
+			if (this.active && camera?.isPerspectiveCamera) {
+				camera.fov = this.fovValue;
+				camera.updateProjectionMatrix();
+			}
+		};
+		number.addEventListener('change', () => applyFov(number.value));
+		number.addEventListener('keydown', event => {
+			if (event.key === 'Enter') {
+				event.preventDefault();
+				number.blur();
+			}
+		});
+		slider.addEventListener('input', () => applyFov(slider.value));
+		panel.append(label, number, slider, degrees);
+		parent.appendChild(panel);
+		this.fovPanel = panel;
+		this.applyFov = applyFov;
+	}
+
+	onPointerDown(event) {
+		if (!this.active || (event.button !== 0 && event.button !== 2)) return;
+		if (this.fovPanel?.contains(event.target)) return;
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		this.suppressNextContextMenu = true;
+		this.cancelOnExit = event.button === 2;
+		document.exitPointerLock?.();
 	}
 
 	stop() {
@@ -101,16 +204,28 @@ export default class WalkNavigation {
 		this.controls.enabled = this.previousControlsEnabled;
 
 		const camera = this.controls.object;
-		if (camera && camera.isPerspectiveCamera && this.previousFov !== null) {
-			camera.fov = this.previousFov;
-			camera.updateProjectionMatrix();
-			this.previousFov = null;
-		}
 		if (camera && camera.isPerspectiveCamera) {
-			const direction = camera.getWorldDirection(new THREE.Vector3()).normalize();
-			this.controls.target.copy(camera.position).addScaledVector(direction, 10);
+			if (this.cancelOnExit && this.savedPose) {
+				camera.position.copy(this.savedPose.position);
+				camera.quaternion.copy(this.savedPose.quaternion);
+				camera.rotation.order = this.savedPose.rotationOrder;
+				this.controls.target.copy(this.savedPose.target);
+			} else {
+				const direction = camera.getWorldDirection(new THREE.Vector3()).normalize();
+				this.controls.target.copy(camera.position).addScaledVector(direction, 10);
+			}
+			if (this.previousFov !== null) {
+				camera.fov = this.previousFov;
+				camera.updateProjectionMatrix();
+			}
 			this.controls.update();
 		}
+		if (this.fovPanel) this.fovPanel.remove();
+		this.fovPanel = null;
+		this.applyFov = null;
+		this.previousFov = null;
+		this.savedPose = null;
+		this.cancelOnExit = false;
 	}
 
 	onMouseMove(event) {
@@ -138,10 +253,20 @@ export default class WalkNavigation {
 		if (event.code === 'Escape') {
 			event.preventDefault();
 			event.stopImmediatePropagation();
+			this.cancelOnExit = true;
 			document.exitPointerLock?.();
 			return;
 		}
 		if (event.code === 'Backquote' && event.ctrlKey) return;
+
+		if (['BracketLeft', 'NumpadSubtract', 'BracketRight', 'NumpadAdd'].includes(event.code)) {
+			const direction = (event.code === 'BracketLeft' || event.code === 'NumpadSubtract') ? -1 : 1;
+			const step = event.shiftKey ? 5 : 1;
+			this.applyFov?.(this.fovValue + direction * step);
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
 
 		const movementKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ShiftLeft', 'ShiftRight'];
 		if (movementKeys.includes(event.code)) this.keys.add(event.code);
@@ -172,7 +297,6 @@ export default class WalkNavigation {
 			document.exitPointerLock?.();
 			return;
 		}
-		// Keep WASD movement on the horizontal plane; looking up/down must not make the camera fly.
 		const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).normalize();
 		const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).normalize();
 		const up = new THREE.Vector3(0, 1, 0);
@@ -203,6 +327,7 @@ export default class WalkNavigation {
 		document.removeEventListener('mousemove', this.onMouseMove);
 		document.removeEventListener('keydown', this.onKeyDown, true);
 		document.removeEventListener('keyup', this.onKeyUp, true);
+		document.removeEventListener('pointerdown', this.onPointerDown, true);
 		window.removeEventListener('blur', this.onWindowBlur);
 	}
 }
