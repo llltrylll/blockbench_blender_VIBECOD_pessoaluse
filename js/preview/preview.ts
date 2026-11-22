@@ -1081,11 +1081,6 @@ export class Preview {
 						face_selection.replace([data.face]);
 					}
 				}
-				if (data.element instanceof Cube && select_mode === 'face' && data.face) {
-					const cube_faces = data.element.getSelectedFaces(true);
-					const uv_faces = UVEditor.getSelectedFaces(data.element);
-					cube_faces.replace(uv_faces);
-				}
 				Blockbench.dispatchEvent('canvas_select', data)
 				if (Modes.paint && !(Toolbox.selected.id == 'fill_tool' && BarItems.fill_mode.value == 'selected_elements')) {
 					// @ts-expect-error
