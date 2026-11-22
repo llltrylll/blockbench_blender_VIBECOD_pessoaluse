@@ -12,6 +12,7 @@ import { unselectInterface } from '../interface/interface';
 import { sameMeshEdge } from '../modeling/mesh/util';
 import { sameCubeEdge } from '../modeling/cube_selection';
 import { getCubeComponentSelection } from '../modeling/cube_selection_data';
+import { SceneCursor } from './scene_cursor';
 
 const background_scene = new THREE.Scene();
 const background_camera = new THREE.PerspectiveCamera(45, 1, 1, 10);
@@ -463,6 +464,7 @@ export class Preview {
 
 		this.raycaster = new THREE.Raycaster();
 		this.mouse = new THREE.Vector2();
+		SceneCursor.attach(Canvas.scene);
 		addEventListeners(this.canvas, 'pointerdown', (event: PointerEvent) => {
 			this.click(event)
 		}, { passive: false });
@@ -1022,6 +1024,29 @@ export class Preview {
 		if (Menu.open) Menu.open.hide();
 		unselectInterface(event);
 		convertTouchEvent(event);
+		if (event.button === 2 && event.shiftKey && Modes.edit && !this.offscreen) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			this.static_rclick = false;
+			Preview.selected = this;
+			const hit = this.raycast(event);
+			let cursor_position = hit?.intersects?.[0]?.point;
+			if (!cursor_position) {
+				const rect = this.canvas.getBoundingClientRect();
+				this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+				this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+				this.raycaster.setFromCamera(this.mouse, this.camera);
+				cursor_position = this.raycaster.ray.intersectPlane(
+					new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
+					new THREE.Vector3()
+				);
+			}
+			if (cursor_position) {
+				const position = SceneCursor.setPosition(cursor_position);
+				Blockbench.showQuickMessage(`3D Cursor: ${position.toArray().map(value => Math.round(value * 100) / 100).join(', ')}`, 2500);
+			}
+			return true;
+		}
 		Preview.selected = this;
 		this.static_rclick = event.which === 3 || event.pointerType == 'touch';
 		if (this.static_rclick) {
@@ -1698,6 +1723,14 @@ export class Preview {
 		}
 	}
 	mouseup(event: MouseEvent) {
+		if (event.button === 2 && Transformer.dragging) {
+			this.static_rclick = false;
+			event.preventDefault();
+			event.stopPropagation();
+			Transformer.cancelMovement(event, false);
+			delete this.selection.click_target;
+			return this;
+		}
 		this.showContextMenu(event);
 		if (settings.canvas_unselect.value &&
 			(event.which === 1 || event.which === 3 || isTouchEvent(event)) &&
