@@ -239,13 +239,31 @@ function analyzeMesh(mesh, requestedEdges) {
 		selectedEdges,
 		faceClips,
 		faceData,
+		adjacency,
 		minimumEdgeLength,
 		maxWidth: minimumEdgeLength * 0.45,
 	};
 }
+function pointOnSegmentParameter(position, a, b) {
+	const direction = subtract(b, a);
+	const lengthSquared = dot(direction, direction);
+	if (lengthSquared < EPSILON * EPSILON) return null;
+	const relative = subtract(position, a);
+	const parameter = dot(relative, direction) / lengthSquared;
+	const clamped = Math.clamp(parameter, 0, 1);
+	const closest = add(a, multiply(direction, clamped));
+	const tolerance = Math.max(1e-5, Math.sqrt(lengthSquared) * 1e-5);
+	if (parameter < -1e-5 || parameter > 1 + 1e-5 || distanceSquared(position, closest) > tolerance * tolerance) {
+		return null;
+	}
+	return clamped;
+}
 function makeFacePlans(analysis, width, factory) {
-	const {mesh, faceClips, faceData} = analysis;
+	const {mesh, faceClips, faceData, adjacency} = analysis;
 	const plans = new Map();
+
+	// First clip faces directly adjacent to selected edges. Keep every face
+	// unmodified until all shared boundary points have been propagated.
 	for (const [faceKey, clips] of faceClips.entries()) {
 		const face = mesh.faces[faceKey];
 		const info = faceData.get(faceKey);
@@ -264,13 +282,88 @@ function makeFacePlans(analysis, width, factory) {
 		}
 		polygon = cleanPolygon(polygon);
 		if (polygon.length < 3) throw new Error('O bevel produziria uma face degenerada.');
+		plans.set(faceKey, {faceKey, face, info, polygon, cornerPoints: {}});
+	}
 
-		const cornerPoints = {};
-		for (const vertexKey of info.vertices) {
+	// A cut that reaches a shared original edge must also be inserted into
+	// the neighboring face. Otherwise the bevel strip ends at a T-junction
+	// and leaves a visible crack when only part of a cube is beveled.
+	const edgeCuts = new Map();
+	for (const plan of plans.values()) {
+		for (let i = 0; i < plan.info.vertices.length; i++) {
+			const aKey = plan.info.vertices[i];
+			const bKey = plan.info.vertices[(i + 1) % plan.info.vertices.length];
+			const a = mesh.vertices[aKey];
+			const b = mesh.vertices[bKey];
+			const id = edgeId(aKey, bKey);
+			if (!edgeCuts.has(id)) {
+				const forward = aKey < bKey;
+				edgeCuts.set(id, {
+					aKey: forward ? aKey : bKey,
+					bKey: forward ? bKey : aKey,
+					points: new Map(),
+				});
+			}
+			const edge = edgeCuts.get(id);
+			for (const point of plan.polygon) {
+				const parameter = pointOnSegmentParameter(point.position, mesh.vertices[edge.aKey], mesh.vertices[edge.bKey]);
+				if (parameter === null || parameter <= 1e-5 || parameter >= 1 - 1e-5) continue;
+				if (!edge.points.has(point.id)) edge.points.set(point.id, {point, parameter});
+			}
+		}
+	}
+
+	for (const [id, edge] of edgeCuts.entries()) {
+		if (!edge.points.size) continue;
+		const candidates = Array.from(edge.points.values()).sort((a, b) => a.parameter - b.parameter);
+		const adjacentFaces = adjacency.get(id) || [];
+		for (const adjacent of adjacentFaces) {
+			let plan = plans.get(adjacent.faceKey);
+			if (!plan) {
+				const info = validateFace(mesh, adjacent.face, adjacent.faceKey);
+				const polygon = info.vertices.map(key => makeOriginalPoint(key, mesh.vertices[key], adjacent.face.uv[key], factory));
+				plan = {faceKey: adjacent.faceKey, face: adjacent.face, info, polygon, cornerPoints: {}};
+				plans.set(adjacent.faceKey, plan);
+			}
+
+			const edgeA = mesh.vertices[edge.aKey];
+			const edgeB = mesh.vertices[edge.bKey];
+			const expanded = [];
+			for (let i = 0; i < plan.polygon.length; i++) {
+				const current = plan.polygon[i];
+				const next = plan.polygon[(i + 1) % plan.polygon.length];
+				expanded.push(current);
+				const currentT = pointOnSegmentParameter(current.position, edgeA, edgeB);
+				const nextT = pointOnSegmentParameter(next.position, edgeA, edgeB);
+				if (currentT === null || nextT === null || Math.abs(nextT - currentT) < 1e-5) continue;
+
+				const low = Math.min(currentT, nextT);
+				const high = Math.max(currentT, nextT);
+				const insertions = candidates.filter(candidate =>
+					candidate.parameter > low + 1e-5 && candidate.parameter < high - 1e-5
+				);
+				if (nextT < currentT) insertions.reverse();
+				for (const insertion of insertions) {
+					const position = insertion.point.position;
+					const uv = plan.face.localToUV(
+						new THREE.Vector3(position[0], position[1], position[2]),
+						plan.info.vertices
+					).toArray();
+					expanded.push({...insertion.point, position: position.slice(), uv});
+				}
+			}
+			plan.polygon = cleanPolygon(expanded);
+		}
+	}
+
+	// Calculate the closest point to each original corner after propagation.
+	// Bevel edge profiles need one endpoint on each adjacent original face.
+	for (const plan of plans.values()) {
+		for (const vertexKey of plan.info.vertices) {
 			const vertex = mesh.vertices[vertexKey];
 			let closest = null;
 			let nearestDistance = Infinity;
-			for (const point of polygon) {
+			for (const point of plan.polygon) {
 				const distance = distanceSquared(point.position, vertex);
 				if (distance < nearestDistance) {
 					nearestDistance = distance;
@@ -280,15 +373,8 @@ function makeFacePlans(analysis, width, factory) {
 			if (!closest || nearestDistance > Math.pow(width * 5 + EPSILON, 2)) {
 				throw new Error('O recorte de uma face ficou ambíguo perto de um vértice.');
 			}
-			cornerPoints[vertexKey] = closest;
+			plan.cornerPoints[vertexKey] = closest;
 		}
-		plans.set(faceKey, {
-			faceKey,
-			face,
-			info,
-			polygon,
-			cornerPoints,
-		});
 	}
 	return plans;
 }
@@ -377,12 +463,21 @@ function makeCornerWorks(mesh, facePlans, edgeWorks) {
 			const face = mesh.faces[faceKey];
 			if (!face.vertices.includes(vertexKey) || face.vertices.length < 3) continue;
 			const plan = facePlans.get(faceKey);
-			const point = plan
-				? plan.cornerPoints[vertexKey]
-				: makeOriginalPoint(vertexKey, mesh.vertices[vertexKey], face.uv[vertexKey], {
-					original: key => 'vertex:' + key
+			if (plan) {
+				const cornerRadius = width * 1.75 + EPSILON;
+				plan.polygon.forEach(point => {
+					if (distanceSquared(point.position, mesh.vertices[vertexKey]) <= cornerRadius * cornerRadius) {
+						incidentFaces.push({face, point});
+					}
 				});
-			incidentFaces.push({face, point});
+			} else {
+				incidentFaces.push({
+					face,
+					point: makeOriginalPoint(vertexKey, mesh.vertices[vertexKey], face.uv[vertexKey], {
+						original: key => 'vertex:' + key
+					})
+				});
+			}
 			normalSum[0] += face.getNormal(true)[0];
 			normalSum[1] += face.getNormal(true)[1];
 			normalSum[2] += face.getNormal(true)[2];
@@ -550,7 +645,25 @@ function applyMeshPlan(plan) {
 		facePlan.polygon.forEach((point, index) => {
 			uv[keys[index]] = point.uv.slice();
 		});
-		facePlan.face.extend({vertices: keys, uv});
+		if (keys.length <= 4) {
+			facePlan.face.extend({vertices: keys, uv});
+		} else {
+			const faceData = facePlan.face.getSaveCopy();
+			delete mesh.faces[facePlan.faceKey];
+			for (let i = 1; i < keys.length - 1; i++) {
+				const triangleKeys = [keys[0], keys[i], keys[i + 1]];
+				const triangleUV = {
+					[triangleKeys[0]]: uv[triangleKeys[0]],
+					[triangleKeys[1]]: uv[triangleKeys[1]],
+					[triangleKeys[2]]: uv[triangleKeys[2]],
+				};
+				const triangle = new MeshFace(mesh, faceData).extend({
+					vertices: triangleKeys,
+					uv: triangleUV,
+				});
+				mesh.addFaces(triangle);
+			}
+		}
 	}
 
 	const usedVertices = new Set();
