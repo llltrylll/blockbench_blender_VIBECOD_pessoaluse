@@ -1,4 +1,4 @@
-name: Build Windows portable RAR
+name: Build Windows portable RAR # ci-win-build
 
 on:
   push:
