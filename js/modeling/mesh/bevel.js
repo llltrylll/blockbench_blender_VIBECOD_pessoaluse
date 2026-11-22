@@ -282,7 +282,7 @@ function makeFacePlans(analysis, width, factory) {
 		}
 		polygon = cleanPolygon(polygon);
 		if (polygon.length < 3) throw new Error('O bevel produziria uma face degenerada.');
-		plans.set(faceKey, {faceKey, face, info, polygon, cornerPoints: {}, cornerCapPoints: {}});
+		plans.set(faceKey, {faceKey, face, info, polygon, cornerPoints: {}, removedCornerPoints: {}});
 	}
 
 	// A cut that reaches a shared original edge must also be inserted into
@@ -322,7 +322,7 @@ function makeFacePlans(analysis, width, factory) {
 			if (!plan) {
 				const info = validateFace(mesh, adjacent.face, adjacent.faceKey);
 				const polygon = info.vertices.map(key => makeOriginalPoint(key, mesh.vertices[key], adjacent.face.uv[key], factory));
-				plan = {faceKey: adjacent.faceKey, face: adjacent.face, info, polygon, cornerPoints: {}, cornerCapPoints: {}};
+				plan = {faceKey: adjacent.faceKey, face: adjacent.face, info, polygon, cornerPoints: {}, removedCornerPoints: {}};
 				plans.set(adjacent.faceKey, plan);
 			}
 
@@ -379,7 +379,7 @@ function makeFacePlans(analysis, width, factory) {
 			const originalIndex = plan.polygon.findIndex(point => point.originalKey === vertexKey);
 			if (originalIndex !== -1) {
 				const [originalPoint] = plan.polygon.splice(originalIndex, 1);
-				plan.cornerCapPoints[vertexKey] = originalPoint;
+				plan.removedCornerPoints[vertexKey] = originalPoint;
 				plan.polygon = cleanPolygon(plan.polygon);
 			}
 		}
@@ -496,7 +496,7 @@ function makeCornerWorks(mesh, facePlans, edgeWorks, width) {
 			let terminalFaceMarkerFound = false;
 			let terminalFaceFound = false;
 			for (const plan of facePlans.values()) {
-				if (!plan.cornerCapPoints[vertexKey]) continue;
+				if (!plan.removedCornerPoints[vertexKey]) continue;
 				terminalFaceMarkerFound = true;
 				const polygon = plan.polygon;
 				const hasProfileEdge = polygon.some((point, index) => {
