@@ -45,7 +45,8 @@ export default class WalkNavigation {
 	toggle() {
 		if (this.active || document.pointerLockElement === this.canvas) {
 			this.cancelOnExit = false;
-			document.exitPointerLock?.();
+			if (this.temporarilyUnlocked) this.stop();
+			else document.exitPointerLock?.();
 			return;
 		}
 		this.enter();
@@ -302,7 +303,8 @@ export default class WalkNavigation {
 			event.preventDefault();
 			event.stopImmediatePropagation();
 			this.cancelOnExit = true;
-			document.exitPointerLock?.();
+			if (this.temporarilyUnlocked) this.stop();
+			else document.exitPointerLock?.();
 			return;
 		}
 		if (event.code === 'Backquote' && event.ctrlKey) return;
