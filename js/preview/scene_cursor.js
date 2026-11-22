@@ -5,6 +5,7 @@ class SceneCursorController {
 		this.position = new THREE.Vector3(0, 0, 0);
 		this.object = new THREE.Group();
 		this.object.name = 'blockbench_3d_cursor';
+		this.object.no_export = true;
 		this.object.userData.no_export = true;
 		this.object.renderOrder = 10000;
 		this.root = null;
@@ -20,6 +21,7 @@ class SceneCursorController {
 			});
 			const line = new THREE.Line(geometry, material);
 			line.renderOrder = 10000;
+			line.no_export = true;
 			line.userData.no_export = true;
 			return line;
 		};
@@ -48,6 +50,7 @@ class SceneCursorController {
 			}
 			const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), ringMaterial.clone());
 			ring.renderOrder = 10000;
+			ring.no_export = true;
 			ring.userData.no_export = true;
 			this.object.add(ring);
 		}
@@ -56,6 +59,7 @@ class SceneCursorController {
 			new THREE.MeshBasicMaterial({color: 0xffffff, depthTest: false, depthWrite: false, toneMapped: false})
 		);
 		center.renderOrder = 10001;
+		center.no_export = true;
 		center.userData.no_export = true;
 		this.object.add(center);
 		this.object.traverse(child => { child.frustumCulled = false; });
