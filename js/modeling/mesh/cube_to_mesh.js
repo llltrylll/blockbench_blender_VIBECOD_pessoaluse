@@ -38,9 +38,12 @@ export function convertCubeToMesh(cube) {
 	];
 
 	const unusedVertices = vertexKeys.slice();
+	const hasClosedSurface = Object.values(cube.faces).every(cubeFace =>
+		cubeFace && cubeFace.texture !== null && cubeFace.enabled !== false
+	);
 	function addFace(direction, vertices) {
 		const cubeFace = cube.faces[direction];
-		if (!cubeFace || cubeFace.texture === null) return;
+		if (!cubeFace || cubeFace.texture === null || cubeFace.enabled === false) return;
 
 		const uvPoints = [
 			[cubeFace.uv[0], cubeFace.uv[1]],
@@ -81,5 +84,5 @@ export function convertCubeToMesh(cube) {
 	mesh.sortInBefore(cube).init();
 	selected.push(mesh);
 	cube.remove();
-	return {mesh, vertexKeys};
+	return {mesh, vertexKeys, hasClosedSurface};
 }

@@ -183,7 +183,7 @@ function validateFace(mesh, face, key) {
 	}
 	return {vertices, positions, normal, longestEdge};
 }
-function analyzeMesh(mesh, requestedEdges, isCube = false) {
+function analyzeMesh(mesh, requestedEdges, isCube = false, requireClosed = isCube) {
 	const edges = uniqueEdges(requestedEdges);
 	if (!edges.length) throw new Error('Selecione uma ou mais arestas antes de aplicar o bevel.');
 
@@ -249,6 +249,7 @@ function analyzeMesh(mesh, requestedEdges, isCube = false) {
 		adjacency,
 		vertexFaces,
 		isCube,
+		requireClosed,
 		minimumEdgeLength,
 		maxWidth: minimumEdgeLength * 0.35,
 	};
@@ -643,7 +644,7 @@ function faceNormalFromPoints(points) {
 function makeMeshPlan(mesh, analysis, width, segments, factory) {
 	const facePlans = makeFacePlans(analysis, width, factory);
 	const edgeWorks = makeEdgeWorks(analysis, facePlans, segments, factory);
-	const corners = makeCornerWorks(mesh, facePlans, edgeWorks, width, analysis.vertexFaces, analysis.isCube);
+	const corners = makeCornerWorks(mesh, facePlans, edgeWorks, width, analysis.vertexFaces, analysis.requireClosed);
 	return {
 		mesh,
 		analysis,
@@ -842,7 +843,7 @@ function runBevel(snapshots, amended, requestedWidth, requestedSegments) {
 			return {mesh: entry.mesh, edges: entry.snapshot.edges};
 		});
 		for (const entry of resolved.cubes) {
-			const {mesh, vertexKeys} = convertCubeToMesh(entry.cube);
+			const {mesh, vertexKeys, hasClosedSurface} = convertCubeToMesh(entry.cube);
 			const meshEdges = entry.snapshot.edges.map(edge => {
 				// Cube component indices follow getGlobalVertexPositions(), while
 				// the native Cube-to-Mesh converter uses a different order for 4-7.
@@ -854,11 +855,11 @@ function runBevel(snapshots, amended, requestedWidth, requestedSegments) {
 			});
 			mesh.getSelectedEdges(true).replace(meshEdges);
 			mesh.getSelectedVertices(true).replace(Array.from(new Set(meshEdges.flat())));
-			targets.push({mesh, edges: meshEdges, isCube: true});
+			targets.push({mesh, edges: meshEdges, isCube: true, requireClosed: hasClosedSurface});
 		}
 
 		if (!targets.length) throw new Error('Nenhuma aresta válida foi encontrada.');
-		const analyses = targets.map(target => analyzeMesh(target.mesh, target.edges, target.isCube));
+		const analyses = targets.map(target => analyzeMesh(target.mesh, target.edges, target.isCube, target.requireClosed));
 		const maximumWidth = Math.min(...analyses.map(analysis => analysis.maxWidth));
 		const defaultWidth = Math.min(...analyses.map(analysis => analysis.minimumEdgeLength * 0.1));
 		if (!(maximumWidth > EPSILON)) throw new Error('A malha é pequena demais para receber bevel.');
