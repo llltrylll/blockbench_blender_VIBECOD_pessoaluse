@@ -1289,33 +1289,32 @@ export class Preview {
 							}
 						}
 					} else if (data.element instanceof Cube && (select_mode === 'face' || select_mode === 'cluster')) {
-						// Face selection for native cubes is independent from UV selection.
+						// Native Cube face selection is independent from UV selection.
 						const cube = data.element;
 						if (!cube.selected) cube.select(event);
 						if (data.face) {
 							const components = getCubeComponentSelection(cube, true);
-						if (multi_select || group_select) {
-							components.faces.toggle(data.face);
-						} else {
-							unselectOtherNodes();
-							components.faces.replace([data.face]);
+							if (multi_select || group_select) {
+								components.faces.toggle(data.face);
+							} else {
+								unselectOtherNodes();
+								components.faces.replace([data.face]);
+							}
+							components.vertices.empty();
+							components.edges.empty();
 						}
-						components.vertices.empty();
-						components.edges.empty();
-					}
-} else if (data.element instanceof Cube && (select_mode === 'edge' || select_mode === 'vertex')) {
-						// Native Cube component selection. The element remains a parametric cuboid.
+					} else if (data.element instanceof Cube && (select_mode === 'edge' || select_mode === 'vertex')) {
+						// Native Cube components remain parametric cuboids.
 						const cube = data.element;
 						if (!cube.selected) cube.select(event);
 						const face = cube.faces[data.face];
 						if (face && data.intersects?.[0]?.point) {
 							const face_indices = face.getVertexIndices();
 							const click_point = data.intersects[0].point;
-						const world_vertices = cube.getGlobalVertexPositions().map(coords => new THREE.Vector3(...coords).add(scene.position));
-						const components = getCubeComponentSelection(cube, true);
-						const vertices = components.vertices;
-						const edges = components.edges;
-
+							const world_vertices = cube.getGlobalVertexPositions().map(coords => new THREE.Vector3(...coords).add(scene.position));
+							const components = getCubeComponentSelection(cube, true);
+							const vertices = components.vertices;
+							const edges = components.edges;
 							components.faces.empty();
 
 							if (select_mode === 'vertex') {
@@ -1334,7 +1333,7 @@ export class Preview {
 									} else {
 										unselectOtherNodes();
 										vertices.replace([closest_index]);
-										edges.empty();
+											edges.empty();
 									}
 								}
 							} else if (select_mode === 'edge') {
