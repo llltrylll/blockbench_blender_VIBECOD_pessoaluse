@@ -1,5 +1,6 @@
 import { Property } from "../../util/property";
 import { Face } from "../abstract/face";
+import { SceneCursor } from "../../preview/scene_cursor";
 
 export class CubeFace extends Face {
 	constructor(direction, data, cube) {
@@ -1240,7 +1241,7 @@ new NodePreviewController(Cube, {
 		mesh.geometry.clearGroups();
 		let last_tex;
 		Canvas.face_order.forEach((fkey, i) => {
-			if (element.faces[fkey].texture !== null) {
+			if (element.faces[fkey].texture !== null && element.faces[fkey].enabled !== false) {
 				indices.push(0 + i*4, 2 + i*4, 1 + i*4, 2 + i*4, 3 + i*4, 1 + i*4);
 				if (last_tex && element.faces[fkey].texture === last_tex) {
 					mesh.geometry.groups[mesh.geometry.groups.length-1].count += 6;
@@ -1279,7 +1280,7 @@ new NodePreviewController(Cube, {
 		} else {
 			let materials = [];
 			Canvas.face_order.forEach(function(face) {
-				if (element.faces[face].texture !== null) {
+				if (element.faces[face].texture !== null && element.faces[face].enabled !== false) {
 					let tex = element.faces[face].getTexture();
 					if (tex && tex.uuid) {
 						materials.push(tex.getMaterial())
@@ -1488,6 +1489,7 @@ new NodePreviewController(Cube, {
 			var start = getVector2(from, axis)
 			var end = getVector2(to, axis)
 			var face = cube.faces[name];
+			if (face.enabled === false) return;
 			var texture = face.getTexture();
 			if (texture === null) return;
 
@@ -1620,58 +1622,48 @@ BARS.defineActions(function() {
 		category: 'edit',
 		condition: () => Modes.edit,
 		click: function () {
-			
 			Undo.initEdit({outliner: true, elements: [], selection: true});
+			let group = getCurrentGroup();
 			var base_cube = new Cube({
 				autouv: (settings.autouv.value ? 1 : 0)
-			}).init()
-			if (!base_cube.box_uv) base_cube.mapAutoUV()
-			let group = getCurrentGroup();
+			}).init();
 			if (group) {
-				base_cube.addTo(group)
+				base_cube.addTo(group);
 				base_cube.scope = group.scope;
 				if (settings.inherit_parent_color.value) base_cube.color = group.color;
 			}
 
+			const position = SceneCursor.getLocalPosition(group);
+			const size = Settings.get('default_cube_size');
+			const half_size = size / 2;
+			base_cube.extend({
+				from: position.map(value => value - half_size),
+				to: position.map(value => value + half_size),
+				origin: position.slice()
+			});
+			base_cube.preview_controller.updateTransform(base_cube);
+			base_cube.preview_controller.updateGeometry(base_cube);
+			if (!base_cube.box_uv) base_cube.mapAutoUV();
+
 			if (Texture.all.length && Format.single_texture) {
 				for (var face in base_cube.faces) {
-					base_cube.faces[face].texture = Texture.getDefault().uuid
+					base_cube.faces[face].texture = Texture.getDefault().uuid;
 				}
-				UVEditor.loadData()
-			}
-			if (Format.bone_rig) {
-				var pos1 = group ? group.origin.slice() : [0, 0, 0];
-				let size = Settings.get('default_cube_size');
-				if (size % 2 == 0) {
-					base_cube.extend({
-						from:[ pos1[0] - size/2, pos1[1] - 0,    pos1[2] - size/2 ],
-						to:[   pos1[0] + size/2, pos1[1] + size, pos1[2] + size/2 ],
-						origin: pos1.slice()
-					})
-				} else {
-					base_cube.extend({
-						from:[ pos1[0], pos1[1], pos1[2] ],
-						to:[   pos1[0]+size, pos1[1]+size, pos1[2]+size ],
-						origin: pos1.slice()
-					})
-				}
+				UVEditor.loadData();
 			}
 
-			unselectAllElements()
-			base_cube.select()
-			Canvas.updateView({elements: [base_cube], element_aspects: {transform: true, geometry: true, faces: true}})
+			unselectAllElements();
+			base_cube.select();
+			Canvas.updateView({elements: [base_cube], element_aspects: {transform: true, geometry: true, faces: true, uv: true}});
 			Undo.finishEdit('Add cube', {outliner: true, elements: Outliner.selected, selection: true});
-			Blockbench.dispatchEvent( 'add_cube', {object: base_cube} )
+			Blockbench.dispatchEvent('add_cube', {object: base_cube});
 
 			Vue.nextTick(function() {
-				if (settings.create_rename.value) {
-					base_cube.rename()
-				}
-			})
-			return base_cube
+				if (settings.create_rename.value) base_cube.rename();
+			});
+			return base_cube;
 		}
 	})
-
 	new Action({
 		id: 'edit_material_instances',
 		icon: 'fas.fa-adjust',
