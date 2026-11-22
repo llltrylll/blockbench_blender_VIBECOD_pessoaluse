@@ -36,7 +36,8 @@
 			"key": 80
 		},
 		"vertex_snap_tool": {
-			"key": 88
+			"key": 88,
+			"shift": true
 		},
 		"stretch_tool": null,
 		"vertex_snap_mode": null,
@@ -176,6 +177,7 @@
 		},
 		"dissolve_edges": {
 			"key": 88,
+			"ctrl": true,
 			"shift": true
 		},
 		"merge_vertices": {
@@ -505,6 +507,15 @@
 		"import_optifine_part": null,
 		"toggle_skin_layer": null,
 		"export_minecraft_skin": null,
-		"explode_skin_model": null
+		"explode_skin_model": null,
+		"cube_selection_vertex": {
+			"key": 49
+		},
+		"cube_selection_edge": {
+			"key": 50
+		},
+		"cube_selection_face": {
+			"key": 51
+		}
 	}
 }
