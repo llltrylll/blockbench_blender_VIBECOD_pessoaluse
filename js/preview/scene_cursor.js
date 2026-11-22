@@ -90,9 +90,9 @@ class SceneCursorController {
 	getLocalPosition(parentElement) {
 		const position = this.getWorldPosition();
 		const parentObject = parentElement?.mesh || this.root;
-		if (!parentObject) return position;
+		if (!parentObject) return position.toArray();
 		parentObject.updateWorldMatrix(true, false);
-		return parentObject.worldToLocal(position);
+		return parentObject.worldToLocal(position).toArray();
 	}
 }
 
