@@ -26,6 +26,18 @@ const edge_material = new THREE.LineBasicMaterial({
 	depthWrite: false,
 	toneMapped: false,
 });
+const face_material = new THREE.MeshBasicMaterial({
+	color: 0xffc44d,
+	side: THREE.DoubleSide,
+	transparent: true,
+	opacity: 0.25,
+	depthTest: true,
+	depthWrite: false,
+	polygonOffset: true,
+	polygonOffsetFactor: -1,
+	polygonOffsetUnits: -1,
+	toneMapped: false,
+});
 
 function removeOverlay(cube) {
 	const mesh = cube.mesh;
@@ -63,7 +75,8 @@ export function updateCubeComponentOverlay(cube) {
 		? (selection.vertices || []).map(key => Number(key)).filter(key => Number.isInteger(key) && key >= 0 && key < 8)
 		: [];
 	const selected_edges = mode === 'edge' ? (selection.edges || []) : [];
-	if (!selected_vertices.length && !selected_edges.length) return;
+	const selected_faces = mode === 'face' ? (selection.faces || []) : [];
+	if (!selected_vertices.length && !selected_edges.length && !selected_faces.length) return;
 
 	const mesh = cube.mesh;
 	if (!mesh) return;
@@ -76,6 +89,24 @@ export function updateCubeComponentOverlay(cube) {
 
 	const marker_indices = new Set(selected_vertices);
 	const line_positions = [];
+	const face_positions = [];
+	const face_indices = [];
+	selected_faces.forEach(fkey => {
+		const indices = cube.faces[fkey]?.getVertexIndices();
+		if (!indices || indices.length !== 4) return;
+		const offset = face_positions.length / 3;
+		indices.forEach(index => {
+			const point = local_vertices[index];
+			if (!point) return;
+			face_positions.push(point.x, point.y, point.z);
+			marker_indices.add(index);
+		});
+		face_indices.push(offset, offset + 1, offset + 2, offset, offset + 2, offset + 3);
+		indices.forEach((index, i) => {
+			const next = indices[i + 1] ?? indices[0];
+			line_positions.push(local_vertices[index], local_vertices[next]);
+		});
+	});
 	selected_edges.forEach(edge => {
 		const a = Number(edge[0]);
 		const b = Number(edge[1]);
@@ -84,6 +115,17 @@ export function updateCubeComponentOverlay(cube) {
 		marker_indices.add(b);
 		line_positions.push(local_vertices[a], local_vertices[b]);
 	});
+
+	if (face_positions.length) {
+		const geometry = new THREE.BufferGeometry();
+		geometry.setAttribute('position', new THREE.Float32BufferAttribute(face_positions, 3));
+		geometry.setIndex(face_indices);
+		geometry.computeVertexNormals();
+		const face_mesh = new THREE.Mesh(geometry, face_material);
+		face_mesh.renderOrder = 9999;
+		face_mesh.raycast = () => {};
+		group.add(face_mesh);
+	}
 
 	if (line_positions.length) {
 		const geometry = new THREE.BufferGeometry().setFromPoints(line_positions);
@@ -127,7 +169,8 @@ export function updateCubeComponentOverlays() {
 		const mode = BarItems.selection_mode?.value;
 		if (Modes.edit && mode !== 'object' && selection && (
 			(mode === 'vertex' && selection.vertices?.length) ||
-			(mode === 'edge' && selection.edges?.length)
+			(mode === 'edge' && selection.edges?.length) ||
+			(mode === 'face' && selection.faces?.length)
 		)) {
 			overlay_cubes.add(cube);
 		} else {
