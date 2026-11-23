@@ -90,6 +90,32 @@ function displayDistance(number) {
 	Blockbench.setCursorTooltip(trimFloatNumber(number));
 }
 
+function captureResizeBaseline() {
+	const tool_id = Toolbox.selected.id;
+	if (tool_id !== 'resize_tool' && tool_id !== 'stretch_tool') return;
+
+	Outliner.selected.forEach(function(obj) {
+		if (obj instanceof Mesh || obj instanceof SplineMesh) {
+			obj.temp_data.oldVertices = {};
+			for (let key in obj.vertices) {
+				obj.temp_data.oldVertices[key] = obj.vertices[key].slice();
+			}
+		} else if (obj.getTypeBehavior('resizable')) {
+			obj.temp_data.old_size = typeof obj.size == 'function' ? obj.size() : obj.size.slice();
+			if (obj.stretch) obj.temp_data.oldStretch = obj.stretch.slice();
+			if (obj.uv_offset) obj.temp_data.oldUVOffset = obj.uv_offset.slice();
+			if (obj.from && obj.to) {
+				obj.temp_data.oldCenter = obj.from.map((from, i) => (from + obj.to[i]) / 2);
+			}
+		} else if (obj.size) {
+			obj.temp_data.old_size = obj.size.slice();
+		}
+		if (obj.getTypeBehavior('stretchable')) {
+			obj.temp_data.oldStretch = obj.stretch.slice();
+		}
+	});
+}
+
 export function getEditTransformSpace() {
 	if (!Outliner.selected.length && (!Group.first_selected || !Format.bone_rig)) return;
 
@@ -330,27 +356,8 @@ new TransformerModule('edit', {
 	},
 	onStart(context) {
 		let tool_id = Toolbox.selected.id;
-		if (tool_id === 'resize_tool' || tool_id === 'stretch_tool') {
-			Outliner.selected.forEach(function(obj) {
-				if (obj instanceof Mesh || obj instanceof SplineMesh) {
-					obj.temp_data.oldVertices = {};
-					for (let key in obj.vertices) {
-						obj.temp_data.oldVertices[key] = obj.vertices[key].slice();
-					}
-				} else if (obj.getTypeBehavior('resizable')) {
-					obj.temp_data.old_size = typeof obj.size == 'function' ? obj.size() : obj.size.slice();
-					if (obj.stretch) obj.temp_data.oldStretch = obj.stretch.slice();
-					if (obj.uv_offset) obj.temp_data.oldUVOffset = obj.uv_offset.slice();
-					if (obj.to && obj.to) obj.temp_data.oldCenter = obj.from.map((from, i) => (from + obj.to[i]) / 2);
-					
-				} else if (obj.size) {
-					obj.temp_data.old_size = obj.size.slice();
-				}
-				if (obj.getTypeBehavior('stretchable')) {
-					obj.temp_data.oldStretch = obj.stretch.slice();
-				}
-			})
-		}
+		captureResizeBaseline();
+
 		var rotate_group = Format.bone_rig && Group.first_selected && (Toolbox.selected.transformerMode == 'rotate');
 
 		if (tool_id == 'move_tool') {
@@ -373,6 +380,12 @@ new TransformerModule('edit', {
 		} else {
 			Undo.initEdit({elements: getSelectedMovingElements(), groups: Group.all.filter(g => g.selected)});
 		}
+	},
+	onAxisChange() {
+		// The Undo snapshot remains the original drag start. Only rebase the
+		// live resize/stretch baseline so changing axes does not undo the axis
+		// already moved or jump when the new axis starts.
+		captureResizeBaseline();
 	},
 	onMove(context) {
 		let {axis, axis_number, value, second_axis, second_axis_number} = context;
