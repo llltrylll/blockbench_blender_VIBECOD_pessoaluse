@@ -30,10 +30,13 @@ if (localStorage.getItem('keybindings')) {
 	}
 }
 
- // Apply this workflow's Blender-style shortcuts once to existing installations.
- // Saved keybindings otherwise override the updated bundled .bbkeymap preset.
- const modelingKeybindMigration = 'blockbench_blender_modeling_keybinds_v1';
+// Apply the Blender-style modeling shortcuts to existing installations.
+ // Stored keybindings override the bundled .bbkeymap preset, so migrate them once.
+ const modelingKeybindMigration = 'blockbench_blender_modeling_keybinds_v2';
  if (localStorage.getItem(modelingKeybindMigration) !== '1') {
+	Keybinds.stored.move_tool = {key: 71};
+	Keybinds.stored.resize_tool = {key: 83};
+	Keybinds.stored.rotate_tool = {key: 82};
 	Keybinds.stored.add_mesh = {key: -1};
 	Keybinds.stored.add_cube = {key: 65, shift: true};
 	Keybinds.stored.delete = {key: 88};
