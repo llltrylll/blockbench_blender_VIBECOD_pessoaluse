@@ -340,6 +340,7 @@ function findSeparatingCut(component, axes) {
 			const negative = [];
 			const positive = [];
 			let crossingArea = 0;
+			let capArea = 0;
 			let negativeArea = 0;
 			let positiveArea = 0;
 			for (const geometry of component) {
@@ -357,7 +358,8 @@ function findSeparatingCut(component, axes) {
 					positive.push(geometry);
 					positiveArea += geometry.area;
 				} else {
-					// A face lying exactly on the cut plane belongs to both closed cuboid sides.
+					// Faces lying on the cut plane are shared by both sections.
+					capArea += geometry.area;
 					negative.push(geometry);
 					positive.push(geometry);
 					negativeArea += geometry.area * 0.5;
@@ -374,6 +376,12 @@ function findSeparatingCut(component, axes) {
 				negativeRatio < 0.2 ||
 				positiveRatio < 0.2) continue;
 
+			const otherAxes = [0, 1, 2].filter(index => index !== axisIndex);
+			const otherCoordinatesA = component.flatMap(geometry => geometry.positions.map(point => dot(point, axes[otherAxes[0]])));
+			const otherCoordinatesB = component.flatMap(geometry => geometry.positions.map(point => dot(point, axes[otherAxes[1]])));
+			const expectedCapArea = (Math.max(...otherCoordinatesA) - Math.min(...otherCoordinatesA)) *
+				(Math.max(...otherCoordinatesB) - Math.min(...otherCoordinatesB));
+			const capRatio = expectedCapArea > EPSILON ? capArea / expectedCapArea : 0;
 			const score = crossingRatio * 100 + Math.abs(negativeRatio - positiveRatio);
 			if (!best || score < best.score) {
 				best = {
@@ -383,6 +391,7 @@ function findSeparatingCut(component, axes) {
 					negativeArea,
 					positiveArea,
 					threshold,
+					hasCap: capRatio >= 0.35,
 					score,
 				};
 			}
@@ -396,8 +405,12 @@ function decomposeComponent(component, tolerance, depth = 0, disabledFaces = [])
 	if (depth < 2 && axes) {
 		const cut = findSeparatingCut(component, axes);
 		if (cut) {
-			const negativeDisabled = disabledFaces.concat(DIRECTION_BY_AXIS[cut.axisIndex][1]);
-			const positiveDisabled = disabledFaces.concat(DIRECTION_BY_AXIS[cut.axisIndex][0]);
+			const negativeDisabled = disabledFaces.slice();
+			const positiveDisabled = disabledFaces.slice();
+			if (cut.hasCap) {
+				negativeDisabled.push(DIRECTION_BY_AXIS[cut.axisIndex][1]);
+				positiveDisabled.push(DIRECTION_BY_AXIS[cut.axisIndex][0]);
+			}
 			const negativeCubes = decomposeComponent(cut.negative, tolerance, depth + 1, negativeDisabled);
 			const positiveCubes = decomposeComponent(cut.positive, tolerance, depth + 1, positiveDisabled);
 			if (negativeCubes && positiveCubes) return negativeCubes.concat(positiveCubes);
