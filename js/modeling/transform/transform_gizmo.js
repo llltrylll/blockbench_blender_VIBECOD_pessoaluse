@@ -1180,7 +1180,7 @@ import { TransformerModule } from "./transform_modules";
 				}, 16)
 			}
 			this.setCanvas = function(canvas) {
-				document.removeEventListener("keydown", onAxisShortcut, false);
+				document.removeEventListener("keydown", onAxisShortcut, true);
 				if (this.canvas) {
 					this.canvas.removeEventListener( "mousedown", onPointerDown );
 					this.canvas.removeEventListener( "touchstart", onPointerDown );
@@ -1195,7 +1195,7 @@ import { TransformerModule } from "./transform_modules";
 
 				this.canvas.addEventListener( "mousemove", onPointerHover, false );
 				this.canvas.addEventListener( "touchmove", onPointerHover, {passive: true} );
-				document.addEventListener("keydown", onAxisShortcut, false);
+				document.addEventListener("keydown", onAxisShortcut, true);
 
 			}
 			this.setCanvas(domElement)
@@ -1268,12 +1268,19 @@ import { TransformerModule } from "./transform_modules";
 			}
 
 			function onAxisShortcut(event) {
-				if (!_dragging || !scope.dragging || !scope.axis || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+				if (!_dragging || !scope.dragging) return;
+				if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
 				const key = String(event.key || '').toLowerCase();
 				// Blockbench is Y-up; Blender is Z-up. Keep X and swap the Y/Z shortcuts.
 				const axis = key === 'x' ? 'X' : key === 'y' ? 'Z' : key === 'z' ? 'Y' : null;
-				if (!axis || scope.axis === axis || !lastPointer) return;
+				if (!axis) return;
 				if (event.target && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName))) return;
+
+				// X is also Blockbench's global Delete shortcut. Capture all three
+				// axis keys before the global keymap can execute another action.
+				event.preventDefault();
+				event.stopImmediatePropagation();
+				if (event.repeat || !scope.axis || scope.axis === axis || !lastPointer) return;
 
 				const module = TransformerModule.active;
 				// Change the constraint before the first movement so the object never jumps.
@@ -1297,8 +1304,6 @@ import { TransformerModule } from "./transform_modules";
 				scope.update();
 				extendTransformLine(true);
 				scope.dispatchEvent(changeEvent);
-				event.preventDefault();
-				event.stopPropagation();
 			}
 
 			function onPointerHover( event ) {
