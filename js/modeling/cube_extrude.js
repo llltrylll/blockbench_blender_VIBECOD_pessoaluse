@@ -141,6 +141,8 @@ function updateEdgeCuboid(context, amount) {
 			visibility: true,
 			faces,
 		});
+		// New cubes in a bone/group hierarchy must retain the source element's scope.
+		context.extruded_cube.scope = cube.scope;
 		context.extruded_cube.sortInBefore(cube, 0).init();
 	}
 
