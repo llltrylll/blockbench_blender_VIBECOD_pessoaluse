@@ -60,10 +60,17 @@ jobs:
             throw "Portable .exe not found in dist-electron"
           }
 
-          choco install winrar --yes --no-progress
+          $installer = Join-Path $env:TEMP 'winrar-x64-723.exe'
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri 'https://www.rarlab.com/rar/winrar-x64-723.exe' -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList '/S' -Wait
+
           $rar = Join-Path $env:ProgramFiles 'WinRAR\Rar.exe'
           if (-not (Test-Path $rar)) {
-            throw "WinRAR command-line executable not found: $rar"
+            $rar = Join-Path ${env:ProgramFiles(x86)} 'WinRAR\Rar.exe'
+          }
+          if (-not (Test-Path $rar)) {
+            throw "WinRAR command-line executable not found after official installer"
           }
 
           $archive = Join-Path (Resolve-Path dist-electron) 'Blockbench-Windows-portable.rar'
