@@ -1,6 +1,6 @@
 import { THREE } from '../lib/libs';
 import { Canvas } from '../preview/canvas';
-import { Mesh, MeshFace } from '../outliner/types/mesh';
+import { Cube } from '../outliner/types/cube';
 import { getSpatialInterval } from './transform';
 import { getCubeComponentSelection } from './cube_selection_data';
 import { updateCubeComponentOverlay } from './cube_selection';
@@ -98,6 +98,9 @@ function edgeCandidates(cube, edge, world_vertices, preview) {
 
 		return {
 			move_axis,
+			move_sign,
+			source_axis,
+			source_sign,
 			local_normal,
 			world_normal,
 			screen_direction: screen_axis.normalize(),
@@ -108,75 +111,72 @@ function edgeCandidates(cube, edge, world_vertices, preview) {
 	}).filter(candidate => candidate.pixels_per_unit > 0.1 && Number.isFinite(candidate.pixels_per_unit) && candidate.source_face);
 }
 
-function getEdgeQuadWorldPositions(context, amount) {
-	const [a, b] = context.edge.map(Number);
-	const base_a = context.world_vertices[a].clone();
-	const base_b = context.world_vertices[b].clone();
-	const offset = context.candidate.world_normal.clone().multiplyScalar(amount);
-	const extruded_a = base_a.clone().add(offset);
-	const extruded_b = base_b.clone().add(offset);
-
-	const normal = new THREE.Vector3().crossVectors(
-		base_b.clone().sub(base_a),
-		extruded_a.clone().sub(base_a)
-	).normalize();
-	if (normal.dot(context.candidate.source_normal_world) < 0) {
-		return [base_b, base_a, extruded_a, extruded_b];
+function copyCubeFaceData(cube) {
+	const faces = {};
+	for (const direction of face_directions ? Object.keys(cube.faces) : Object.keys(cube.faces)) {
+		faces[direction] = cube.faces[direction].getSaveCopy();
+		if (faces[direction].uv instanceof Array) faces[direction].uv = faces[direction].uv.slice();
 	}
-	return [base_a, base_b, extruded_b, extruded_a];
+	return faces;
 }
 
-function getMeshLocalPoint(world_point, context) {
-	return world_point.clone()
-		.applyMatrix4(context.parent_inverse)
-		.add(context.mesh_origin)
-		.toArray();
-}
+function updateEdgeCuboid(context, amount) {
+	const cube = context.cube;
+	const candidate = context.candidate;
+	const active = amount > 0.0001;
 
-function updateEdgeMesh(context, amount) {
-	const world_points = getEdgeQuadWorldPositions(context, amount);
-	if (!context.mesh) {
-		const parent = context.parent;
-		const mesh = new Mesh({
-			name: context.cube.name + ' Edge Extrude',
-			vertices: {},
-			color: context.cube.color,
+	if (!context.extruded_cube && !active) return;
+
+	if (!context.extruded_cube) {
+		const attachment_face = faceKeyForAxis(candidate.move_axis, candidate.move_sign);
+		const back_face = faceKeyForAxis(candidate.move_axis, -candidate.move_sign);
+		const faces = copyCubeFaceData(cube);
+		faces[back_face].enabled = false;
+
+		context.attachment_face_key = attachment_face;
+		context.original_attachment_face_enabled = cube.faces[attachment_face].enabled !== false;
+		context.extruded_cube = new Cube({
+			name: cube.name + '_Extrude',
+			from: context.adjusted_from.slice(),
+			to: context.adjusted_to.slice(),
+			origin: cube.origin.slice(),
+			rotation: cube.rotation.slice(),
+			inflate: 0,
+			stretch: [1, 1, 1],
+			uv_offset: cube.uv_offset.slice(),
+			autouv: cube.autouv,
+			color: cube.color,
+			shade: cube.shade,
+			mirror_uv: cube.mirror_uv,
+			export: cube.export,
+			visibility: true,
+			faces,
 		});
-		mesh.origin = context.mesh_origin.toArray();
-		if (parent) mesh.addTo(parent);
+		context.extruded_cube.sortInBefore(cube, 0).init();
+	}
 
-		const keys = mesh.addVertices(...world_points.map(point => getMeshLocalPoint(point, context)));
-		const edge_length = context.world_vertices[Number(context.edge[0])]
-			.distanceTo(context.world_vertices[Number(context.edge[1])]);
-		const uv = {
-			[keys[0]]: [0, 0],
-			[keys[1]]: [edge_length, 0],
-			[keys[2]]: [edge_length, amount],
-			[keys[3]]: [0, amount],
-		};
-		const texture = context.candidate.source_face.texture
-			|| (Format.single_texture ? Texture.getDefault()?.uuid : false);
-		const face = new MeshFace(mesh, {vertices: keys, uv, texture});
-		const [face_key] = mesh.addFaces(face);
-		mesh.init();
-
-		context.mesh = mesh;
-		context.mesh_vertex_keys = keys;
-		context.mesh_face_key = face_key;
+	const from = context.adjusted_from.slice();
+	const to = context.adjusted_to.slice();
+	if (candidate.move_sign > 0) {
+		from[candidate.move_axis] = context.adjusted_to[candidate.move_axis];
+		to[candidate.move_axis] = context.adjusted_to[candidate.move_axis] + amount;
 	} else {
-		world_points.forEach((point, index) => {
-			const local = getMeshLocalPoint(point, context);
-			context.mesh.vertices[context.mesh_vertex_keys[index]].splice(0, 3, ...local);
-		});
-		const face = context.mesh.faces[context.mesh_face_key];
-		const edge_length = context.world_vertices[Number(context.edge[0])]
-			.distanceTo(context.world_vertices[Number(context.edge[1])]);
-		face.uv[context.mesh_vertex_keys[0]] = [0, 0];
-		face.uv[context.mesh_vertex_keys[1]] = [edge_length, 0];
-		face.uv[context.mesh_vertex_keys[2]] = [edge_length, amount];
-		face.uv[context.mesh_vertex_keys[3]] = [0, amount];
+		from[candidate.move_axis] = context.adjusted_from[candidate.move_axis] - amount;
+		to[candidate.move_axis] = context.adjusted_from[candidate.move_axis];
 	}
-	Mesh.preview_controller.updateAll(context.mesh);
+
+	context.extruded_cube.from.splice(0, 3, ...from);
+	context.extruded_cube.to.splice(0, 3, ...to);
+	context.extruded_cube.visibility = active;
+	cube.faces[context.attachment_face_key].enabled = active
+		? false
+		: context.original_attachment_face_enabled;
+
+	context.extruded_cube.preview_controller.updateTransform(context.extruded_cube);
+	context.extruded_cube.preview_controller.updateGeometry(context.extruded_cube);
+	context.extruded_cube.preview_controller.updateFaces(context.extruded_cube);
+	context.extruded_cube.preview_controller.updateUV(context.extruded_cube);
+	cube.preview_controller.updateFaces(cube);
 }
 
 function updateEdgeExtrude(context, event) {
@@ -203,7 +203,7 @@ function updateEdgeExtrude(context, event) {
 	const interval = getSpatialInterval(event);
 	const amount = Math.max(0, interval > 0 ? Math.round(raw_amount / interval) * interval : raw_amount);
 	context.amount = amount;
-	if (amount > 0.0001) updateEdgeMesh(context, amount);
+	if (amount > 0.0001 || context.extruded_cube) updateEdgeCuboid(context, amount);
 	Blockbench.setCursorTooltip('Extrude Edge: ' + (Math.round(amount * 100) / 100));
 }
 
@@ -223,20 +223,32 @@ function finishExtrude(commit) {
 	cleanupModal(context);
 
 	if (context.type === 'edge') {
-		if (commit && context.mesh && context.amount > 0.0001) {
+		if (commit && context.extruded_cube && context.amount > 0.0001) {
 			unselectAllElements();
-			context.mesh.select();
-			const far_edge = [context.mesh_vertex_keys[2], context.mesh_vertex_keys[3]];
-			context.mesh.getSelectedVertices(true).replace(far_edge);
-			context.mesh.getSelectedEdges(true).replace([far_edge]);
-			context.mesh.getSelectedFaces(true).empty();
+			context.extruded_cube.select();
+			const far_edge = cube_vertex_signs
+				.map((signs, index) => ({signs, index}))
+				.filter(entry =>
+					entry.signs[context.candidate.move_axis] === context.candidate.move_sign &&
+					entry.signs[context.candidate.source_axis] === context.candidate.source_sign
+				)
+				.map(entry => String(entry.index));
+			const components = getCubeComponentSelection(context.extruded_cube, true);
+			components.vertices.replace(far_edge);
+			components.edges.replace([far_edge]);
+			components.faces.empty();
 			updateSelection();
 			Canvas.updateView({
-				elements: [context.mesh],
+				elements: [context.cube, context.extruded_cube],
 				element_aspects: {geometry: true, uv: true, faces: true, transform: true},
 				selection: true,
 			});
-			Undo.finishEdit('Extrude Cube Edge');
+			updateCubeComponentOverlay(context.extruded_cube);
+			Undo.finishEdit('Extrude Cube Edge', {
+				elements: [context.cube, context.extruded_cube],
+				outliner: true,
+				selection: true,
+			});
 		} else {
 			Undo.cancelEdit(true);
 			Canvas.updateView({elements: [context.cube], element_aspects: {geometry: true, faces: true}, selection: true});
@@ -275,7 +287,10 @@ function bindModalEvents(context) {
 		pointer_event.preventDefault();
 		pointer_event.stopImmediatePropagation();
 		if (pointer_event.button === 0) finishExtrude(true);
-		else if (pointer_event.button === 2) finishExtrude(false);
+		else if (pointer_event.button === 2) {
+			context.preview.suppressNextRightClickMenu?.();
+			finishExtrude(false);
+		}
 	};
 	context.onKeyDown = key_event => {
 		if (active_extrude !== context) return;
@@ -367,10 +382,6 @@ function startFaceExtrude(event, cube, face_key, preview) {
 }
 
 function startEdgeExtrude(event, cube, edge, preview) {
-	if (!Format.meshes) {
-		Blockbench.showQuickMessage('This format does not support mesh faces, so Cube Edge Extrude is unavailable here.');
-		return;
-	}
 	cube.mesh.updateWorldMatrix(true, false);
 	const world_vertices = cube.getGlobalVertexPositions().map(coords => new THREE.Vector3(...coords).add(scene.position));
 	const candidates = edgeCandidates(cube, edge, world_vertices, preview);
@@ -394,6 +405,10 @@ function startEdgeExtrude(event, cube, edge, preview) {
 		? new THREE.Vector3(...parent.origin)
 		: new THREE.Vector3();
 
+	const adjusted_from = cube.from.slice();
+	const adjusted_to = cube.to.slice();
+	adjustFromAndToForInflateAndStretch(adjusted_from, adjusted_to, cube);
+
 	const context = {
 		type: 'edge',
 		cube,
@@ -404,12 +419,11 @@ function startEdgeExtrude(event, cube, edge, preview) {
 		candidate: null,
 		start_mouse,
 		amount: 0,
-		parent,
-		parent_inverse,
-		mesh_origin,
-		mesh: null,
-		mesh_vertex_keys: [],
-		mesh_face_key: null,
+		adjusted_from,
+		adjusted_to,
+		extruded_cube: null,
+		attachment_face_key: null,
+		original_attachment_face_enabled: true,
 	};
 	Undo.initEdit({elements: [cube], outliner: true, selection: true});
 	bindModalEvents(context);
