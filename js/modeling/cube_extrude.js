@@ -305,9 +305,8 @@ function bindModalEvents(context) {
 		if (active_extrude !== context) return;
 		menu_event.preventDefault();
 		menu_event.stopImmediatePropagation();
-		// The contextmenu event is already being consumed. Do not suppress the
-		// next independent right-button mouseup.
-		context.preview.suppressNextRightClickMenu?.(false);
+		// This contextmenu event is already cancelled here; do not arm a
+		// second suppression that could swallow the next intentional right-click.
 		finishExtrude(false);
 	};
 
