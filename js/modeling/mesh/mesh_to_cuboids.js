@@ -194,7 +194,7 @@ function chooseBoxAxes(faceGeometries) {
 	}
 	return [axisX, axisY, axisZ];
 }
-function fitSolidCuboid(component, tolerance) {
+function fitSolidCuboid(component, tolerance, disabledFaces = []) {
 	const axes = chooseBoxAxes(component);
 	if (!axes) return null;
 	const allPositions = component.flatMap(geometry => geometry.positions);
@@ -226,7 +226,6 @@ function fitSolidCuboid(component, tolerance) {
 	const minimumSize = Math.min(...size);
 	const allowedDeviation = minimumSize * tolerance;
 
-	// A valid cuboid shell should keep most vertices close to one of its six planes.
 	let nearBoundary = 0;
 	for (const coords of projected) {
 		const nearestPlaneDistance = Math.min(
@@ -248,37 +247,6 @@ function fitSolidCuboid(component, tolerance) {
 	const alignedAreaRatio = totalArea > EPSILON ? alignedArea / totalArea : 0;
 	if (boundaryRatio < 0.78 || alignedAreaRatio < 0.58) return null;
 
-	// Verify that all six sides have enough surface coverage. This prevents an L-shaped
-	// or hollow shell from being collapsed into one oversized box just because its
-	// vertices happen to touch the bounding planes.
-	const sideCoverage = [[0, 0], [0, 0], [0, 0]];
-	for (const geometry of component) {
-		const alignmentByAxis = axes.map(axis => dot(axis, geometry.normal));
-		let axisIndex = 0;
-		for (let i = 1; i < 3; i++) {
-			if (Math.abs(alignmentByAxis[i]) > Math.abs(alignmentByAxis[axisIndex])) axisIndex = i;
-		}
-		if (Math.abs(alignmentByAxis[axisIndex]) < Math.cos(Math.degToRad(30))) continue;
-		const faceCenter = average(geometry.positions);
-		const facePlane = dot(faceCenter, axes[axisIndex]);
-		const midpoint = (min[axisIndex] + max[axisIndex]) * 0.5;
-		const sideIndex = facePlane >= midpoint ? 1 : 0;
-		const targetPlane = sideIndex ? max[axisIndex] : min[axisIndex];
-		const planeTolerance = Math.max(allowedDeviation * 1.5, size[axisIndex] * 0.03);
-		if (Math.abs(facePlane - targetPlane) <= planeTolerance) {
-			sideCoverage[axisIndex][sideIndex] += geometry.area * Math.abs(alignmentByAxis[axisIndex]);
-		}
-	}
-	const minimumSideCoverage = Math.max(0.35, 0.60 - tolerance * 0.8);
-	for (let axis = 0; axis < 3; axis++) {
-		const otherAxes = [0, 1, 2].filter(index => index !== axis);
-		const expectedArea = size[otherAxes[0]] * size[otherAxes[1]];
-		if (expectedArea < EPSILON) return null;
-		for (let side = 0; side < 2; side++) {
-			if (sideCoverage[axis][side] / expectedArea < minimumSideCoverage) return null;
-		}
-	}
-
 	const mid = min.map((value, axis) => (value + max[axis]) * 0.5);
 	const center = add(
 		add(multiply(axes[0], mid[0]), multiply(axes[1], mid[1])),
@@ -286,9 +254,17 @@ function fitSolidCuboid(component, tolerance) {
 	);
 	const halfSize = size.map(value => value * 0.5);
 
-	// Gather the best matching source texture/UV rectangle for each of the six box sides.
 	const sides = {};
-	for (const direction of FACE_DIRECTIONS) sides[direction] = {textures: new Map(), minU: Infinity, minV: Infinity, maxU: -Infinity, maxV: -Infinity, area: 0};
+	for (const direction of FACE_DIRECTIONS) {
+		sides[direction] = {
+			textures: new Map(),
+			minU: Infinity,
+			minV: Infinity,
+			maxU: -Infinity,
+			maxV: -Infinity,
+			area: 0,
+		};
+	}
 	for (const geometry of component) {
 		const alignmentByAxis = axes.map(axis => dot(axis, geometry.normal));
 		let axisIndex = 0;
@@ -296,16 +272,18 @@ function fitSolidCuboid(component, tolerance) {
 			if (Math.abs(alignmentByAxis[i]) > Math.abs(alignmentByAxis[axisIndex])) axisIndex = i;
 		}
 		if (Math.abs(alignmentByAxis[axisIndex]) < Math.cos(Math.degToRad(30))) continue;
+
 		const faceCenter = average(geometry.positions);
 		const facePlane = dot(faceCenter, axes[axisIndex]);
-		const sign = facePlane >= (min[axisIndex] + max[axisIndex]) * 0.5 ? 1 : -1;
+		const sign = facePlane >= mid[axisIndex] ? 1 : -1;
 		const direction = DIRECTION_BY_AXIS[axisIndex][sign > 0 ? 1 : 0];
-		const side = sides[direction];
-		const faceCenter = average(geometry.positions);
-		const facePlane = dot(faceCenter, axes[axisIndex]);
 		const targetPlane = sign > 0 ? max[axisIndex] : min[axisIndex];
 		if (Math.abs(facePlane - targetPlane) > Math.max(allowedDeviation * 1.5, size[axisIndex] * 0.03)) continue;
-		const faceUVs = geometry.keys.map(key => geometry.face.uv && geometry.face.uv[key]).filter(uv => uv && Number.isFinite(uv[0]) && Number.isFinite(uv[1]));
+
+		const side = sides[direction];
+		const faceUVs = geometry.keys
+			.map(key => geometry.face.uv && geometry.face.uv[key])
+			.filter(uv => uv && Number.isFinite(uv[0]) && Number.isFinite(uv[1]));
 		if (faceUVs.length >= 3) {
 			for (const uv of faceUVs) {
 				side.minU = Math.min(side.minU, uv[0]);
@@ -314,7 +292,9 @@ function fitSolidCuboid(component, tolerance) {
 				side.maxV = Math.max(side.maxV, uv[1]);
 			}
 		}
-		if (geometry.texture) side.textures.set(geometry.texture, (side.textures.get(geometry.texture) || 0) + geometry.area);
+		if (geometry.texture) {
+			side.textures.set(geometry.texture, (side.textures.get(geometry.texture) || 0) + geometry.area);
+		}
 		side.area += geometry.area;
 	}
 	for (const direction of FACE_DIRECTIONS) {
@@ -326,8 +306,107 @@ function fitSolidCuboid(component, tolerance) {
 			: null;
 	}
 
-	return {center, axes, halfSize, sides, boundaryRatio, alignedAreaRatio};
+	return {center, axes, halfSize, sides, disabledFaces, boundaryRatio, alignedAreaRatio};
 }
+
+function findSeparatingCut(component, axes) {
+	if (!axes || component.length < 8) return null;
+	const totalArea = component.reduce((sum, geometry) => sum + geometry.area, 0);
+	if (totalArea < EPSILON) return null;
+	let best = null;
+
+	for (let axisIndex = 0; axisIndex < 3; axisIndex++) {
+		const axis = axes[axisIndex];
+		const allCoordinates = component.flatMap(geometry => geometry.positions.map(point => dot(point, axis)));
+		const min = Math.min(...allCoordinates);
+		const max = Math.max(...allCoordinates);
+		const extent = max - min;
+		if (extent < EPSILON) continue;
+		const epsilon = Math.max(1e-5, extent * 1e-5);
+		const centers = component.map(geometry => dot(average(geometry.positions), axis)).sort((a, b) => a - b);
+		const thresholds = [(min + max) * 0.5, centers[Math.floor(centers.length * 0.5)]];
+		for (let i = 1; i < centers.length; i++) {
+			const gap = centers[i] - centers[i - 1];
+			if (gap > extent * 0.04) thresholds.push((centers[i] + centers[i - 1]) * 0.5);
+		}
+
+		const tested = new Set();
+		for (const threshold of thresholds) {
+			const quantized = Math.round(threshold / epsilon);
+			if (tested.has(quantized)) continue;
+			tested.add(quantized);
+			if (threshold <= min + extent * 0.25 || threshold >= max - extent * 0.25) continue;
+
+			const negative = [];
+			const positive = [];
+			let crossingArea = 0;
+			let negativeArea = 0;
+			let positiveArea = 0;
+			for (const geometry of component) {
+				const values = geometry.positions.map(point => dot(point, axis));
+				const faceMin = Math.min(...values);
+				const faceMax = Math.max(...values);
+				if (faceMin < threshold - epsilon && faceMax > threshold + epsilon) {
+					crossingArea += geometry.area;
+					continue;
+				}
+				if (faceMax <= threshold + epsilon && faceMin < threshold - epsilon) {
+					negative.push(geometry);
+					negativeArea += geometry.area;
+				} else if (faceMin >= threshold - epsilon && faceMax > threshold + epsilon) {
+					positive.push(geometry);
+					positiveArea += geometry.area;
+				} else {
+					// A face lying exactly on the cut plane belongs to both closed cuboid sides.
+					negative.push(geometry);
+					positive.push(geometry);
+					negativeArea += geometry.area * 0.5;
+					positiveArea += geometry.area * 0.5;
+				}
+			}
+			const crossingRatio = crossingArea / totalArea;
+			const negativeRatio = negativeArea / totalArea;
+			const positiveRatio = positiveArea / totalArea;
+			const minimumFaceCount = Math.max(3, Math.floor(component.length * 0.2));
+			if (crossingRatio > 0.025 ||
+				negative.length < minimumFaceCount ||
+				positive.length < minimumFaceCount ||
+				negativeRatio < 0.2 ||
+				positiveRatio < 0.2) continue;
+
+			const score = crossingRatio * 100 + Math.abs(negativeRatio - positiveRatio);
+			if (!best || score < best.score) {
+				best = {
+					axisIndex,
+					negative,
+					positive,
+					negativeArea,
+					positiveArea,
+					threshold,
+					score,
+				};
+			}
+		}
+	}
+	return best;
+}
+
+function decomposeComponent(component, tolerance, depth = 0, disabledFaces = []) {
+	const axes = chooseBoxAxes(component);
+	if (depth < 2 && axes) {
+		const cut = findSeparatingCut(component, axes);
+		if (cut) {
+			const negativeDisabled = disabledFaces.concat(DIRECTION_BY_AXIS[cut.axisIndex][1]);
+			const positiveDisabled = disabledFaces.concat(DIRECTION_BY_AXIS[cut.axisIndex][0]);
+			const negativeCubes = decomposeComponent(cut.negative, tolerance, depth + 1, negativeDisabled);
+			const positiveCubes = decomposeComponent(cut.positive, tolerance, depth + 1, positiveDisabled);
+			if (negativeCubes && positiveCubes) return negativeCubes.concat(positiveCubes);
+		}
+	}
+	const cube = fitSolidCuboid(component, tolerance, disabledFaces);
+	return cube ? [cube] : null;
+}
+
 function prepareMesh(mesh, options) {
 	const transform = createParentSpaceTransform(mesh);
 	const faceGeometryByKey = new Map();
@@ -343,12 +422,12 @@ function prepareMesh(mesh, options) {
 	const components = getConnectedFaceComponents(faceGeometryByKey);
 	const cuboids = [];
 	for (const component of components) {
-		const cuboid = fitSolidCuboid(component, options.tolerance);
-		if (!cuboid) {
-			// Never hide a source Mesh if even one connected shell could not be fitted.
+		const fitted = decomposeComponent(component, options.tolerance);
+		if (!fitted || !fitted.length) {
+			// Never hide a source Mesh if any connected shell cannot be approximated safely.
 			return {mesh, cuboids: [], rejected: 1, sourceFaces: faceGeometryByKey.size};
 		}
-		cuboids.push(cuboid);
+		cuboids.push(...fitted);
 	}
 	return {mesh, cuboids, rejected: 0, sourceFaces: faceGeometryByKey.size};
 }
@@ -380,7 +459,7 @@ function makeCubeData(mesh, data, index) {
 	for (const direction of FACE_DIRECTIONS) {
 		const face = cube.faces[direction];
 		const side = data.sides[direction];
-		face.enabled = true;
+		face.enabled = !data.disabledFaces.includes(direction);
 		face.texture = side.texture || false;
 		if (side.uv) face.uv = side.uv.slice();
 		face.rotation = 0;
