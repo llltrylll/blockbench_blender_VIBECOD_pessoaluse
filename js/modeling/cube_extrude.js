@@ -305,6 +305,7 @@ function bindModalEvents(context) {
 		if (active_extrude !== context) return;
 		menu_event.preventDefault();
 		menu_event.stopImmediatePropagation();
+		context.preview.suppressNextRightClickMenu?.();
 		finishExtrude(false);
 	};
 
