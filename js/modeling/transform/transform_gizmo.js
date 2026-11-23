@@ -1283,8 +1283,6 @@ import { TransformerModule } from "./transform_modules";
 				if (event.repeat || !scope.axis || scope.axis === axis || !lastPointer) return;
 
 				const module = TransformerModule.active;
-				// Change the constraint before the first movement so the object never jumps.
-				if (module && module.has_changed) return;
 
 				scope.camera.updateMatrixWorld();
 				scope.getWorldPosition(worldPosition);
@@ -1296,11 +1294,14 @@ import { TransformerModule } from "./transform_modules";
 
 				scope.axis = axis;
 				offset.copy(planeHit.point);
+				if (Toolbox.selected.id === 'resize_tool' || Toolbox.selected.id === 'stretch_tool') {
+					scope.direction = scope.axis.substr(0, 1) !== 'N';
+				}
 				if (module) {
 					module.previous_value = null;
 					module.initial_value = null;
+					module.onAxisChange?.({event});
 				}
-				if (Toolbox.selected.id === 'resize_tool' || Toolbox.selected.id === 'stretch_tool') scope.direction = true;
 				scope.update();
 				extendTransformLine(true);
 				scope.dispatchEvent(changeEvent);
