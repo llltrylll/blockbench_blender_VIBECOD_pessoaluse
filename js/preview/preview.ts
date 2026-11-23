@@ -1734,8 +1734,8 @@ export class Preview {
 			if (Canvas.hover_helper_vertex.parent) Canvas.hover_helper_vertex.parent.remove(Canvas.hover_helper_vertex);
 		}
 	}
-	suppressNextRightClickMenu() {
-		this.suppressNextAppContextMenu = true;
+	suppressNextRightClickMenu(suppressUpcomingMouseUp = true) {
+		this.suppressNextAppContextMenu = suppressUpcomingMouseUp;
 		this.suppressNextNativeContextMenu = true;
 		if (this.suppressNativeContextMenuTimer) clearTimeout(this.suppressNativeContextMenuTimer);
 		if (this.suppressContextMenuHandler) {
@@ -1746,6 +1746,7 @@ export class Preview {
 			if (target !== this.canvas && !(target instanceof Node && this.canvas.contains(target))) return;
 			event.preventDefault();
 			event.stopImmediatePropagation();
+			this.suppressNextAppContextMenu = false;
 			this.suppressNextNativeContextMenu = false;
 			document.removeEventListener('contextmenu', handler, true);
 			this.suppressContextMenuHandler = undefined;
@@ -1775,7 +1776,8 @@ export class Preview {
 			return this;
 		}
 		if (event.button === 2 && Transformer.dragging) {
-			this.suppressNextRightClickMenu();
+			// This mouseup is already being consumed; suppress only its following contextmenu.
+			this.suppressNextRightClickMenu(false);
 			this.static_rclick = false;
 			event.preventDefault();
 			event.stopPropagation();
