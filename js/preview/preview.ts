@@ -278,6 +278,7 @@ export class Preview {
 	suppressNextAppContextMenu = false
 	suppressNextNativeContextMenu = false
 	suppressNativeContextMenuTimer?: ReturnType<typeof setTimeout>
+	suppressContextMenuHandler?: (event: MouseEvent) => void
 
 	mouse: THREE.Vector2
 
@@ -1737,14 +1738,36 @@ export class Preview {
 		this.suppressNextAppContextMenu = true;
 		this.suppressNextNativeContextMenu = true;
 		if (this.suppressNativeContextMenuTimer) clearTimeout(this.suppressNativeContextMenuTimer);
+		if (this.suppressContextMenuHandler) {
+			document.removeEventListener('contextmenu', this.suppressContextMenuHandler, true);
+		}
+		const handler = (event: MouseEvent) => {
+			const target = event.target;
+			if (target !== this.canvas && !(target instanceof Node && this.canvas.contains(target))) return;
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			this.suppressNextNativeContextMenu = false;
+			document.removeEventListener('contextmenu', handler, true);
+			this.suppressContextMenuHandler = undefined;
+		};
+		this.suppressContextMenuHandler = handler;
+		// Capture at document level so Blockbench's own context-menu listeners
+		// cannot race the viewport's modal-cancel handler.
+		document.addEventListener('contextmenu', handler, true);
+		// Failsafe only. The previous 700 ms timer expired while the user was
+		// still holding RMB, allowing the browser/app menu to open on release.
 		this.suppressNativeContextMenuTimer = setTimeout(() => {
+			document.removeEventListener('contextmenu', handler, true);
+			this.suppressContextMenuHandler = undefined;
 			this.suppressNextAppContextMenu = false;
 			this.suppressNextNativeContextMenu = false;
 			this.suppressNativeContextMenuTimer = undefined;
-		}, 700);
+		}, 5000);
 	}
 	mouseup(event: MouseEvent) {
-		if (this.suppressNextAppContextMenu || this.walkNavigation?.suppressNextContextMenu) {
+		if (event.button === 2 && (this.suppressNextAppContextMenu || this.walkNavigation?.suppressNextContextMenu)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
 			this.suppressNextAppContextMenu = false;
 			if (this.walkNavigation) this.walkNavigation.suppressNextContextMenu = false;
 			this.static_rclick = false;
