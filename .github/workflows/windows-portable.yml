@@ -2,6 +2,26 @@ name: Windows portable test build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - teste-1
+    paths:
+      - '.github/workflows/windows-portable.yml'
+      - 'assets/**'
+      - 'build/**'
+      - 'css/**'
+      - 'dist/**'
+      - 'electron/**'
+      - 'font/**'
+      - 'js/**'
+      - 'keymaps/**'
+      - 'lang/**'
+      - 'lib/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/**'
+      - 'themes/**'
+      - 'index.html'
 
 jobs:
   build-windows-portable:
