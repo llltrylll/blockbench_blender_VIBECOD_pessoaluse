@@ -24,6 +24,7 @@ export interface TransformerModuleOptions {
 
 	updateGizmo: (this: TransformerModule) => void
 	onPointerDown?: (this: TransformerModule, context: TransformContext) => void
+	onAxisChange?: (this: TransformerModule, context: TransformContext) => void
 	calculateOffset: (this: TransformerModule, context: TransformContextMove) => number
 	onStart?: (this: TransformerModule, context: TransformContextMove) => void
 	onMove?: (this: TransformerModule, context: TransformContextMove) => void
@@ -37,6 +38,7 @@ export class TransformerModule implements TransformerModuleOptions {
 	priority: number
 	condition: any
 	use_condition: any
+	onAxisChange?: (this: TransformerModule, context: TransformContext) => void
 
 	previous_value: number | null
 	initial_value: number | null
@@ -54,6 +56,7 @@ export class TransformerModule implements TransformerModuleOptions {
 
 		this.updateGizmo = options.updateGizmo;
 		this.onPointerDown = options.onPointerDown;
+		this.onAxisChange = options.onAxisChange;
 		this.calculateOffset = options.calculateOffset;
 		this.onStart = options.onStart;
 		this.onMove = options.onMove;
