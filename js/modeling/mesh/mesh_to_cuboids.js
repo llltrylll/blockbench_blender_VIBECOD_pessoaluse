@@ -4,6 +4,9 @@ import { Cube } from '../../outliner/types/cube';
 import { Mesh } from '../../outliner/types/mesh';
 
 const EPSILON = 1e-6;
+const MAX_DECOMPOSITION_DEPTH = 12;
+const MAX_CUBOIDS_PER_COMPONENT = 128;
+const MAX_ADDITIONAL_CUT_PLANES = 24;
 const FACE_DIRECTIONS = ['north', 'east', 'south', 'west', 'up', 'down'];
 const DIRECTION_BY_AXIS = [
 	['west', 'east'],
@@ -297,6 +300,23 @@ function fitSolidCuboid(component, tolerance, disabledFaces = []) {
 		}
 		side.area += geometry.area;
 	}
+	// Do not accept a loose bounding box around an L-shaped or multi-part
+	// assembly just because most vertices happen to lie on its outer planes.
+	// A real cuboid needs substantial surface support on at least four sides.
+	// Bevel reduces the flat-face area, so the threshold follows the user setting.
+	const minimumSideCoverage = Math.max(0.22, 0.48 - tolerance * 0.5);
+	let supportedSides = 0;
+	for (let axisIndex = 0; axisIndex < 3; axisIndex++) {
+		const expectedArea = size[(axisIndex + 1) % 3] * size[(axisIndex + 2) % 3];
+		if (expectedArea < EPSILON) continue;
+		for (let signIndex = 0; signIndex < 2; signIndex++) {
+			const direction = DIRECTION_BY_AXIS[axisIndex][signIndex];
+			const coverage = sides[direction].area / expectedArea;
+			if (coverage >= minimumSideCoverage) supportedSides++;
+		}
+	}
+	if (supportedSides < 4) return null;
+
 	for (const direction of FACE_DIRECTIONS) {
 		const side = sides[direction];
 		side.texture = Array.from(side.textures.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || false;
@@ -327,15 +347,36 @@ function findSeparatingCut(component, axes) {
 		const thresholds = [(min + max) * 0.5, centers[Math.floor(centers.length * 0.5)]];
 		for (let i = 1; i < centers.length; i++) {
 			const gap = centers[i] - centers[i - 1];
-			if (gap > extent * 0.04) thresholds.push((centers[i] + centers[i - 1]) * 0.5);
+			if (gap > extent * 0.025) thresholds.push((centers[i] + centers[i - 1]) * 0.5);
 		}
+
+		// Meshes made from joined cuboids often have a seam vertex plane but no
+		// large gap between face centers. Vote for repeated vertex coordinates
+		// so those seams become candidate split planes as well.
+		const planeVotes = new Map();
+		for (const geometry of component) {
+			const seenPlanes = new Set();
+			for (const point of geometry.positions) {
+				const plane = Math.round(dot(point, axis) / epsilon) * epsilon;
+				if (seenPlanes.has(plane)) continue;
+				seenPlanes.add(plane);
+				planeVotes.set(plane, (planeVotes.get(plane) || 0) + 1);
+			}
+		}
+		const votedPlanes = Array.from(planeVotes.entries())
+			.filter(([plane, votes]) => votes >= 3 &&
+				plane > min + extent * 0.08 &&
+				plane < max - extent * 0.08)
+			.sort((a, b) => b[1] - a[1])
+			.slice(0, MAX_ADDITIONAL_CUT_PLANES);
+		for (const [plane] of votedPlanes) thresholds.push(plane);
 
 		const tested = new Set();
 		for (const threshold of thresholds) {
 			const quantized = Math.round(threshold / epsilon);
 			if (tested.has(quantized)) continue;
 			tested.add(quantized);
-			if (threshold <= min + extent * 0.25 || threshold >= max - extent * 0.25) continue;
+			if (threshold <= min + extent * 0.08 || threshold >= max - extent * 0.08) continue;
 
 			const negative = [];
 			const positive = [];
@@ -369,12 +410,15 @@ function findSeparatingCut(component, axes) {
 			const crossingRatio = crossingArea / totalArea;
 			const negativeRatio = negativeArea / totalArea;
 			const positiveRatio = positiveArea / totalArea;
-			const minimumFaceCount = Math.max(3, Math.floor(component.length * 0.2));
-			if (crossingRatio > 0.025 ||
+			// Small attached pieces (arms, legs and narrow protrusions) can
+			// represent far less than 20% of the parent shell. Requiring that
+			// much area silently prevents their extraction.
+			const minimumFaceCount = Math.max(3, Math.floor(component.length * 0.05));
+			if (crossingRatio > 0.035 ||
 				negative.length < minimumFaceCount ||
 				positive.length < minimumFaceCount ||
-				negativeRatio < 0.2 ||
-				positiveRatio < 0.2) continue;
+				negativeRatio < 0.06 ||
+				positiveRatio < 0.06) continue;
 
 			const otherAxes = [0, 1, 2].filter(index => index !== axisIndex);
 			const otherCoordinatesA = component.flatMap(geometry => geometry.positions.map(point => dot(point, axes[otherAxes[0]])));
@@ -400,9 +444,10 @@ function findSeparatingCut(component, axes) {
 	return best;
 }
 
-function decomposeComponent(component, tolerance, depth = 0, disabledFaces = []) {
+function decomposeComponent(component, tolerance, depth = 0, disabledFaces = [], budget = {remaining: MAX_CUBOIDS_PER_COMPONENT}) {
+	if (!component.length || budget.remaining < 1) return null;
 	const axes = chooseBoxAxes(component);
-	if (depth < 2 && axes) {
+	if (depth < MAX_DECOMPOSITION_DEPTH && budget.remaining > 1 && axes) {
 		const cut = findSeparatingCut(component, axes);
 		if (cut) {
 			const negativeDisabled = disabledFaces.slice();
@@ -411,13 +456,19 @@ function decomposeComponent(component, tolerance, depth = 0, disabledFaces = [])
 				negativeDisabled.push(DIRECTION_BY_AXIS[cut.axisIndex][1]);
 				positiveDisabled.push(DIRECTION_BY_AXIS[cut.axisIndex][0]);
 			}
-			const negativeCubes = decomposeComponent(cut.negative, tolerance, depth + 1, negativeDisabled);
-			const positiveCubes = decomposeComponent(cut.positive, tolerance, depth + 1, positiveDisabled);
+			const negativeCubes = decomposeComponent(cut.negative, tolerance, depth + 1, negativeDisabled, budget);
+			const positiveCubes = decomposeComponent(cut.positive, tolerance, depth + 1, positiveDisabled, budget);
 			if (negativeCubes && positiveCubes) return negativeCubes.concat(positiveCubes);
+
+			// A detected split that cannot produce two valid cuboids must not
+			// fall back to one oversized bounding cuboid. Reject safely instead.
+			return null;
 		}
 	}
 	const cube = fitSolidCuboid(component, tolerance, disabledFaces);
-	return cube ? [cube] : null;
+	if (!cube) return null;
+	budget.remaining--;
+	return [cube];
 }
 
 function prepareMesh(mesh, options) {
@@ -435,7 +486,7 @@ function prepareMesh(mesh, options) {
 	const components = getConnectedFaceComponents(faceGeometryByKey);
 	const cuboids = [];
 	for (const component of components) {
-		const fitted = decomposeComponent(component, options.tolerance);
+		const fitted = decomposeComponent(component, options.tolerance, 0, [], {remaining: MAX_CUBOIDS_PER_COMPONENT});
 		if (!fitted || !fitted.length) {
 			// Never hide a source Mesh if any connected shell cannot be approximated safely.
 			return {mesh, cuboids: [], rejected: 1, sourceFaces: faceGeometryByKey.size};
