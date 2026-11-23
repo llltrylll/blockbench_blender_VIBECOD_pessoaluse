@@ -275,6 +275,9 @@ export class Preview {
 	static_rclick: boolean
 	rclick_cooldown: any
 	event_start?: ArrayVector2
+	suppressNextAppContextMenu = false
+	suppressNextNativeContextMenu = false
+	suppressNativeContextMenuTimer?: ReturnType<typeof setTimeout>
 
 	mouse: THREE.Vector2
 
@@ -468,6 +471,14 @@ export class Preview {
 		addEventListeners(this.canvas, 'pointerdown', (event: PointerEvent) => {
 			this.click(event)
 		}, { passive: false });
+		this.canvas.addEventListener('contextmenu', (event: MouseEvent) => {
+			if (!this.suppressNextNativeContextMenu && !this.walkNavigation?.active) return;
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			this.suppressNextNativeContextMenu = false;
+			if (this.suppressNativeContextMenuTimer) clearTimeout(this.suppressNativeContextMenuTimer);
+			this.suppressNativeContextMenuTimer = undefined;
+		}, true);
 		addEventListeners(this.canvas, 'mousemove touchmove', (event: MouseEvent) => {
 			if (!this.static_rclick) return;
 			convertTouchEvent(event);
@@ -1722,14 +1733,26 @@ export class Preview {
 			if (Canvas.hover_helper_vertex.parent) Canvas.hover_helper_vertex.parent.remove(Canvas.hover_helper_vertex);
 		}
 	}
+	suppressNextRightClickMenu() {
+		this.suppressNextAppContextMenu = true;
+		this.suppressNextNativeContextMenu = true;
+		if (this.suppressNativeContextMenuTimer) clearTimeout(this.suppressNativeContextMenuTimer);
+		this.suppressNativeContextMenuTimer = setTimeout(() => {
+			this.suppressNextAppContextMenu = false;
+			this.suppressNextNativeContextMenu = false;
+			this.suppressNativeContextMenuTimer = undefined;
+		}, 700);
+	}
 	mouseup(event: MouseEvent) {
-		if (this.walkNavigation?.suppressNextContextMenu) {
-			this.walkNavigation.suppressNextContextMenu = false;
+		if (this.suppressNextAppContextMenu || this.walkNavigation?.suppressNextContextMenu) {
+			this.suppressNextAppContextMenu = false;
+			if (this.walkNavigation) this.walkNavigation.suppressNextContextMenu = false;
 			this.static_rclick = false;
 			delete this.selection.click_target;
 			return this;
 		}
 		if (event.button === 2 && Transformer.dragging) {
+			this.suppressNextRightClickMenu();
 			this.static_rclick = false;
 			event.preventDefault();
 			event.stopPropagation();
