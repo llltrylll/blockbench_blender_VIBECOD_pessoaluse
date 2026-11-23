@@ -253,6 +253,7 @@ export default class WalkNavigation {
 		event.preventDefault();
 		event.stopImmediatePropagation();
 		this.suppressNextContextMenu = true;
+		if (event.button === 2) this.canvas.preview?.suppressNextRightClickMenu?.();
 		this.cancelOnExit = event.button === 2;
 		if (this.temporarilyUnlocked) this.stop();
 		else document.exitPointerLock?.();
