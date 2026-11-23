@@ -91,29 +91,22 @@ function edgeCandidates(cube, edge, world_vertices, preview) {
 		const world_normal = new THREE.Vector3(...local_normal).transformDirection(cube.mesh.matrixWorld).normalize();
 		const screen_axis = projectToScreen(midpoint.clone().add(world_normal), preview.camera, rect).sub(screen_start);
 		const pixels_per_unit = screen_axis.length();
-		const source_face_key = faceKeyForAxis(source_axis, source_sign);
-		const source_normal = [0, 0, 0];
-		source_normal[source_axis] = source_sign;
-		const source_normal_world = new THREE.Vector3(...source_normal).transformDirection(cube.mesh.matrixWorld).normalize();
 
 		return {
 			move_axis,
 			move_sign,
 			source_axis,
 			source_sign,
-			local_normal,
 			world_normal,
 			screen_direction: screen_axis.normalize(),
 			pixels_per_unit,
-			source_face: cube.faces[source_face_key],
-			source_normal_world,
 		};
-	}).filter(candidate => candidate.pixels_per_unit > 0.1 && Number.isFinite(candidate.pixels_per_unit) && candidate.source_face);
+	}).filter(candidate => candidate.pixels_per_unit > 0.1 && Number.isFinite(candidate.pixels_per_unit));
 }
 
 function copyCubeFaceData(cube) {
 	const faces = {};
-	for (const direction of face_directions ? Object.keys(cube.faces) : Object.keys(cube.faces)) {
+	for (const direction of Object.keys(cube.faces)) {
 		faces[direction] = cube.faces[direction].getSaveCopy();
 		if (faces[direction].uv instanceof Array) faces[direction].uv = faces[direction].uv.slice();
 	}
@@ -128,13 +121,9 @@ function updateEdgeCuboid(context, amount) {
 	if (!context.extruded_cube && !active) return;
 
 	if (!context.extruded_cube) {
-		const attachment_face = faceKeyForAxis(candidate.move_axis, candidate.move_sign);
 		const back_face = faceKeyForAxis(candidate.move_axis, -candidate.move_sign);
 		const faces = copyCubeFaceData(cube);
 		faces[back_face].enabled = false;
-
-		context.attachment_face_key = attachment_face;
-		context.original_attachment_face_enabled = cube.faces[attachment_face].enabled !== false;
 		context.extruded_cube = new Cube({
 			name: cube.name + '_Extrude',
 			from: context.adjusted_from.slice(),
@@ -157,6 +146,15 @@ function updateEdgeCuboid(context, amount) {
 
 	const from = context.adjusted_from.slice();
 	const to = context.adjusted_to.slice();
+	const source_size = context.adjusted_to[candidate.source_axis] - context.adjusted_from[candidate.source_axis];
+	const thickness = Math.min(1, source_size);
+	if (candidate.source_sign > 0) {
+		from[candidate.source_axis] = context.adjusted_to[candidate.source_axis] - thickness;
+		to[candidate.source_axis] = context.adjusted_to[candidate.source_axis];
+	} else {
+		from[candidate.source_axis] = context.adjusted_from[candidate.source_axis];
+		to[candidate.source_axis] = context.adjusted_from[candidate.source_axis] + thickness;
+	}
 	if (candidate.move_sign > 0) {
 		from[candidate.move_axis] = context.adjusted_to[candidate.move_axis];
 		to[candidate.move_axis] = context.adjusted_to[candidate.move_axis] + amount;
@@ -168,9 +166,6 @@ function updateEdgeCuboid(context, amount) {
 	context.extruded_cube.from.splice(0, 3, ...from);
 	context.extruded_cube.to.splice(0, 3, ...to);
 	context.extruded_cube.visibility = active;
-	cube.faces[context.attachment_face_key].enabled = active
-		? false
-		: context.original_attachment_face_enabled;
 
 	context.extruded_cube.preview_controller.updateTransform(context.extruded_cube);
 	context.extruded_cube.preview_controller.updateGeometry(context.extruded_cube);
@@ -397,14 +392,6 @@ function startEdgeExtrude(event, cube, edge, preview) {
 			rect.top + (1 - preview.mouse.y) * rect.height * 0.5
 		);
 
-	const parent = cube.parent && cube.parent !== 'root' ? cube.parent : null;
-	const parent_object = parent?.mesh || scene;
-	parent_object.updateWorldMatrix(true, false);
-	const parent_inverse = new THREE.Matrix4().copy(parent_object.matrixWorld).invert();
-	const mesh_origin = Format.bone_rig && parent?.origin
-		? new THREE.Vector3(...parent.origin)
-		: new THREE.Vector3();
-
 	const adjusted_from = cube.from.slice();
 	const adjusted_to = cube.to.slice();
 	adjustFromAndToForInflateAndStretch(adjusted_from, adjusted_to, cube);
@@ -422,8 +409,6 @@ function startEdgeExtrude(event, cube, edge, preview) {
 		adjusted_from,
 		adjusted_to,
 		extruded_cube: null,
-		attachment_face_key: null,
-		original_attachment_face_enabled: true,
 	};
 	Undo.initEdit({elements: [cube], outliner: true, selection: true});
 	bindModalEvents(context);
