@@ -279,6 +279,7 @@ export class Preview {
 	suppressNextNativeContextMenu = false
 	suppressNativeContextMenuTimer?: ReturnType<typeof setTimeout>
 	suppressContextMenuHandler?: (event: MouseEvent) => void
+	suppressMouseUpHandler?: (event: MouseEvent) => void
 
 	mouse: THREE.Vector2
 
@@ -1741,29 +1742,59 @@ export class Preview {
 		if (this.suppressContextMenuHandler) {
 			document.removeEventListener('contextmenu', this.suppressContextMenuHandler, true);
 		}
-		const handler = (event: MouseEvent) => {
+		if (this.suppressMouseUpHandler) {
+			document.removeEventListener('mouseup', this.suppressMouseUpHandler, true);
+		}
+
+		const clearSuppression = () => {
+			if (this.suppressNativeContextMenuTimer) clearTimeout(this.suppressNativeContextMenuTimer);
+			this.suppressNativeContextMenuTimer = undefined;
+			if (this.suppressContextMenuHandler) {
+				document.removeEventListener('contextmenu', this.suppressContextMenuHandler, true);
+				this.suppressContextMenuHandler = undefined;
+			}
+			if (this.suppressMouseUpHandler) {
+				document.removeEventListener('mouseup', this.suppressMouseUpHandler, true);
+				this.suppressMouseUpHandler = undefined;
+			}
+			this.suppressNextAppContextMenu = false;
+			this.suppressNextNativeContextMenu = false;
+		};
+
+		const contextMenuHandler = (event: MouseEvent) => {
 			const target = event.target;
 			if (target !== this.canvas && !(target instanceof Node && this.canvas.contains(target))) return;
 			event.preventDefault();
 			event.stopImmediatePropagation();
-			this.suppressNextAppContextMenu = false;
-			this.suppressNextNativeContextMenu = false;
-			document.removeEventListener('contextmenu', handler, true);
-			this.suppressContextMenuHandler = undefined;
+			clearSuppression();
 		};
-		this.suppressContextMenuHandler = handler;
+		this.suppressContextMenuHandler = contextMenuHandler;
 		// Capture at document level so Blockbench's own context-menu listeners
 		// cannot race the viewport's modal-cancel handler.
-		document.addEventListener('contextmenu', handler, true);
-		// Failsafe only. The previous 700 ms timer expired while the user was
-		// still holding RMB, allowing the browser/app menu to open on release.
-		this.suppressNativeContextMenuTimer = setTimeout(() => {
-			document.removeEventListener('contextmenu', handler, true);
-			this.suppressContextMenuHandler = undefined;
-			this.suppressNextAppContextMenu = false;
-			this.suppressNextNativeContextMenu = false;
-			this.suppressNativeContextMenuTimer = undefined;
-		}, 5000);
+		document.addEventListener('contextmenu', contextMenuHandler, true);
+
+		const armCleanup = (delay: number) => {
+			if (this.suppressNativeContextMenuTimer) clearTimeout(this.suppressNativeContextMenuTimer);
+			this.suppressNativeContextMenuTimer = setTimeout(clearSuppression, delay);
+		};
+		if (suppressUpcomingMouseUp) {
+			const mouseUpHandler = (event: MouseEvent) => {
+				if (event.button !== 2) return;
+				document.removeEventListener('mouseup', mouseUpHandler, true);
+				this.suppressMouseUpHandler = undefined;
+				// The browser may emit contextmenu just after mouseup. Keep the
+				// one-shot native guard briefly, then release it if no menu follows.
+				armCleanup(500);
+			};
+			this.suppressMouseUpHandler = mouseUpHandler;
+			document.addEventListener('mouseup', mouseUpHandler, true);
+			// A held button that never reaches mouseup must not leave a permanent guard.
+			armCleanup(30000);
+		} else {
+			// Called from the active mouseup handler: only the following native
+			// contextmenu event belongs to this gesture.
+			armCleanup(500);
+		}
 	}
 	mouseup(event: MouseEvent) {
 		if (event.button === 2 && (this.suppressNextAppContextMenu || this.walkNavigation?.suppressNextContextMenu)) {
